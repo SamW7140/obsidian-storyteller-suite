@@ -8,12 +8,21 @@ describe('DateParsing', () => {
     expect(r.start).toBeDefined();
   });
 
-  it('respects custom reference date for relative parsing', () => {
-    const ref = new Date('2024-01-15');
-    const r = parseEventDate('next Friday', { referenceDate: ref });
-    // Not asserting exact millis; just ensure it parsed
+  it('parses BCE year', () => {
+    const r = parseEventDate('2000 BC');
     expect(r.error).toBeUndefined();
     expect(r.start).toBeDefined();
+    expect(r.start?.year).toBe(-1999);
+    expect(typeof toMillis(r.start)).toBe('number');
+  });
+
+  it('parses BCE day', () => {
+    const r = parseEventDate('23 Mar 44 BCE');
+    expect(r.error).toBeUndefined();
+    expect(r.start).toBeDefined();
+    expect(r.start?.year).toBe(-43);
+    expect(r.start?.month).toBe(3);
+    expect(r.start?.day).toBe(23);
     expect(typeof toMillis(r.start)).toBe('number');
   });
 

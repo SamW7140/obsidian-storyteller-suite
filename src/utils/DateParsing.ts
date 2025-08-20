@@ -1,5 +1,5 @@
 import { DateTime } from 'luxon';
-import * as chrono from 'chrono-node';
+import { parse, isValid } from 'date-fns';
 
 export type ParsedPrecision = 'year' | 'month' | 'day' | 'time';
 
@@ -21,15 +21,6 @@ export interface ParsedEventDate {
 
 const APPROX_RE = /(circa|around|about|approx|~|approx\.)/i;
 
-function inferPrecisionFromChrono(result: chrono.ParsedResult): ParsedPrecision {
-  const start = result.start;
-  // If hour/minute specified -> time precision
-  if (start.isCertain('hour') || start.isCertain('minute')) return 'time';
-  if (start.isCertain('day')) return 'day';
-  if (start.isCertain('month')) return 'month';
-  return 'year';
-}
-
 function inferPrecisionFromLuxon(dt: DateTime): ParsedPrecision {
   // If time components present
   if (dt.hour !== 0 || dt.minute !== 0 || dt.second !== 0 || dt.millisecond !== 0) return 'time';
@@ -38,7 +29,14 @@ function inferPrecisionFromLuxon(dt: DateTime): ParsedPrecision {
   return 'year';
 }
 
-/** Try Luxon ISO first, then SQL, then Chrono (casual). */
+function inferPrecisionFromPattern(pattern: string): ParsedPrecision {
+  if (/[HhKkms]/.test(pattern)) return 'time';
+  if (/[dD]/.test(pattern)) return 'day';
+  if (/[ML]/.test(pattern)) return 'month';
+  return 'year';
+}
+
+/** Try Luxon ISO first, then SQL, then era-aware parsing, then ad-hoc formats. */
 export function parseEventDate(input?: string, opts: ParseOptions = {}): ParsedEventDate {
   if (!input || !input.trim()) return { error: 'empty' };
   const text = input.trim();
@@ -56,31 +54,24 @@ export function parseEventDate(input?: string, opts: ParseOptions = {}): ParsedE
     return { start: sql, precision: inferPrecisionFromLuxon(sql), approximate };
   }
 
-  // 3) Chrono parse (supports ranges)
-  try {
-    const reference: Date | undefined = opts.referenceDate;
-    const results = chrono.parse(text, reference as any, { forwardDate: !!opts.forwardDate });
-    if (results && results.length > 0) {
-      const r = results[0];
-      const start = DateTime.fromJSDate(r.start.date(), { zone: opts.timezone as any });
-      const end = r.end ? DateTime.fromJSDate(r.end.date(), { zone: opts.timezone as any }) : undefined;
-      const precision = inferPrecisionFromChrono(r);
-      return { start, end, precision, approximate };
+  // 3) Era tokens (BC/BCE/AD/CE)
+  if (/\b(bc|bce|ad|ce)\b/i.test(text)) {
+    const norm = text.replace(/\bBCE?\b/gi, 'BC').replace(/\bCE\b/gi, 'AD');
+    const patterns = ['yyyy G', 'd MMM yyyy G', 'd MMMM yyyy G'];
+    for (const pattern of patterns) {
+      const js = parse(norm, pattern, new Date());
+      if (isValid(js)) {
+        const start = DateTime.fromJSDate(js, { zone: opts.timezone as any });
+        return { start, precision: inferPrecisionFromPattern(pattern), approximate };
+      }
     }
-  } catch (e) {
-    // fallthrough
   }
 
   // 4) Few common ad-hoc formats
-  const candidates = [
-    ['yyyy-MM', 'month'],
-    ['yyyy', 'year'],
-    ['LLL dd yyyy', 'day'],
-    ['LLLL dd yyyy', 'day'],
-  ] as const;
-  for (const [fmt, prec] of candidates) {
+  const candidates = ['yyyy-MM', 'yyyy', 'LLL dd yyyy', 'LLLL dd yyyy'];
+  for (const fmt of candidates) {
     const dt = DateTime.fromFormat(text, fmt, { zone: opts.timezone as any });
-    if (dt.isValid) return { start: dt, precision: prec, approximate };
+    if (dt.isValid) return { start: dt, precision: inferPrecisionFromPattern(fmt), approximate };
   }
 
   return { error: 'unparsed' };
