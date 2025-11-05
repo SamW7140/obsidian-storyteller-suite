@@ -93,11 +93,9 @@ export class MapEditorView extends ItemView {
     }
 
     async onClose(): Promise<void> {
-        // Check for unsaved changes
-        if (this.hasUnsavedChanges) {
-            // In a real implementation, we might want to save automatically or show a confirmation
-            console.warn('MapEditorView closed with unsaved changes');
-        }
+        // Note: User confirmation for unsaved changes is handled in handleClose()
+        // This onClose() is also called during system-initiated closures (hot reload, plugin unload)
+        // where warnings are not helpful since the user has no control
 
         // Clean up map editor
         if (this.mapEditor) {
