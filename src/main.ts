@@ -17,7 +17,34 @@ import { FolderResolver, FolderResolverOptions } from './folders/FolderResolver'
 import { PromptModal } from './modals/ui/PromptModal';
 import { ConfirmModal } from './modals/ui/ConfirmModal';
 import { CharacterModal } from './modals/CharacterModal';
-import { Character, Location, Event, GalleryImage, GalleryData, Story, Group, PlotItem, Reference, Chapter, Scene, Map as StoryMap } from './types';
+import {
+    Character,
+    Location,
+    Event,
+    GalleryImage,
+    GalleryData,
+    Story,
+    Group,
+    PlotItem,
+    Reference,
+    Chapter,
+    Scene,
+    Map as StoryMap,
+    // New entity types for Phase 1
+    Culture,
+    Economy,
+    Faction,
+    MagicSystem,
+    Calendar,
+    // Timeline & Causality types
+    TimelineFork,
+    CausalityLink,
+    TimelineConflict,
+    PacingAnalysis,
+    // Analytics types
+    WritingSession,
+    StoryAnalytics
+} from './types';
 import { CharacterListModal } from './modals/CharacterListModal';
 import { LocationModal } from './modals/LocationModal';
 import { LocationListModal } from './modals/LocationListModal';
@@ -105,6 +132,41 @@ import { getTemplateSections } from './utils/EntityTemplates';
     /** Map settings */
     enableFrontmatterMarkers?: boolean;
     enableDataViewMarkers?: boolean;
+
+    /**
+     * ====================================================================
+     * NEW FEATURE SETTINGS - World-Building, Timeline, Analytics, Sensory
+     * ====================================================================
+     */
+
+    /** World-Building entity folder paths */
+    cultureFolderPath?: string;
+    economyFolderPath?: string;
+    factionFolderPath?: string;
+    magicSystemFolderPath?: string;
+    calendarFolderPath?: string;
+
+    /** Feature toggles */
+    enableWorldBuilding?: boolean;
+    enableAdvancedTimeline?: boolean;
+    enableAnalytics?: boolean;
+    enableSensoryProfiles?: boolean;
+
+    /** Timeline & Causality settings */
+    timelineForks?: TimelineFork[];
+    causalityLinks?: CausalityLink[];
+    timelineConflicts?: TimelineConflict[];
+    autoDetectConflicts?: boolean;
+
+    /** Analytics settings */
+    analyticsEnabled?: boolean;
+    analyticsData?: StoryAnalytics;
+    writingSessions?: WritingSession[];
+    pacingAnalysis?: PacingAnalysis;
+    trackWritingSessions?: boolean;
+
+    /** Active calendar for date conversions */
+    activeCalendarId?: string;
 }
 
 /**
@@ -144,7 +206,32 @@ import { getTemplateSections } from './utils/EntityTemplates';
     enableFrontmatterMarkers: false,
     enableDataViewMarkers: false,
     customFieldsMode: 'flatten',
-    relationshipsMigrated: false
+    relationshipsMigrated: false,
+
+    // New feature defaults
+    cultureFolderPath: '',
+    economyFolderPath: '',
+    factionFolderPath: '',
+    magicSystemFolderPath: '',
+    calendarFolderPath: '',
+
+    enableWorldBuilding: true,
+    enableAdvancedTimeline: false,
+    enableAnalytics: false,
+    enableSensoryProfiles: true,
+
+    timelineForks: [],
+    causalityLinks: [],
+    timelineConflicts: [],
+    autoDetectConflicts: true,
+
+    analyticsEnabled: false,
+    analyticsData: undefined,
+    writingSessions: [],
+    pacingAnalysis: undefined,
+    trackWritingSessions: false,
+
+    activeCalendarId: undefined
 }
 
 /**
