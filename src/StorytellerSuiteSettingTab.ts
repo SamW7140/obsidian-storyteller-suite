@@ -463,7 +463,7 @@ export class StorytellerSuiteSettingTab extends PluginSettingTab {
 
         new Setting(container)
             .setName('Interface layout')
-            .setDesc('Auto-detect chooses desktop, tablet, or phone layouts from the platform. Force a layout if detection gets it wrong — e.g. touch-screen laptops flipping into tablet mode. Existing dialogs pick up the change when reopened.')
+            .setDesc('Auto-detect chooses desktop, tablet, or phone layouts from the platform. Force a layout if detection gets it wrong, for example a touch-screen laptop flipping into tablet mode. Existing dialogs pick up the change when reopened.')
             .addDropdown(dropdown => dropdown
                 .addOption('auto', 'Auto-detect')
                 .addOption('desktop', 'Desktop')
