@@ -1,5 +1,27 @@
 # Changelog
 
+## 1.8.19
+
+### Added
+- Books compile as drafts directly from the Books tab, so a whole book can be assembled without building a manuscript selection by hand first.
+- Custom compile steps can run their own JavaScript. This is off by default and gated behind a settings toggle, since a compile step runs arbitrary code against your vault.
+- Interface layout override setting, for cases where the automatic phone, tablet, and desktop detection picks the wrong layout.
+- Help tab now gathers the tutorial, contact, and support links in one place, with the video tutorial linked from there.
+
+### Fixed
+- Long modals could not be scrolled. Modal content that ran past the bottom of the window was simply unreachable, which made the compile workflow modal unusable at smaller window sizes. All modals now cap at 85% of the window height and scroll their content.
+- Surface devices flipped into tablet mode when the keyboard was still attached.
+- Settings pane came up blank after Obsidian moved the window between displays.
+- Timeline regressions that were lost when the beta branch was cut are back on the release build: the timeline fills its container again, drag edits persist, and narrative connectors resolve and redraw correctly.
+- Plot hole detector resolved character references by id and reported holes against characters it should have matched.
+
+### Changed
+- Entity references, location history, connections, and custom fields are written to frontmatter as readable strings instead of nested structures, so the notes stay legible when read outside the plugin.
+- Compile tab uses Lucide icons in place of emoji glyphs.
+
+### Internal
+- Export HTML is rendered through Obsidian's MarkdownRenderer with vault images inlined as data URIs, so an exported file stands alone.
+
 ## 1.8.18
 
 ### Added
