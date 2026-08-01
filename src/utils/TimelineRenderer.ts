@@ -1453,6 +1453,7 @@ export class TimelineRenderer {
             const referenceDate2 = referenceDate;
             this.scenes.forEach((scene, sceneIdx) => {
                 if (!scene.date) return;
+                if (!this.shouldIncludeScene(scene)) return;
                 const parsed = parseEventDate(scene.date, { referenceDate: referenceDate2 });
                 const startMs = toMillis(parsed?.start);
                 if (startMs == null) return;
@@ -1467,7 +1468,10 @@ export class TimelineRenderer {
             });
         }
 
-        // Add watched vault note items when showWatchedNotes is enabled
+        // Add watched vault note items when showWatchedNotes is enabled.
+        // These are arbitrary vault notes picked up by a frontmatter property,
+        // with no characters, locations, or groups for the entity filters to
+        // match, so they are not filtered.
         if (this.showWatchedNotes) {
             const referenceDate3 = referenceDate;
             this.watchedNotes.forEach((note, noteIdx) => {
@@ -1712,34 +1716,75 @@ export class TimelineRenderer {
     /**
      * Check if event should be included based on filters
      */
-    private shouldIncludeEvent(evt: Event): boolean {
+    /**
+     * The entity filters, applied to anything that can carry characters,
+     * locations, groups, or tags. Shared by events and by scenes, which are not
+     * events but are placed on the same timeline and must obey the same filters.
+     * Locations are plural here because a scene can link several.
+     */
+    private matchesEntityFilters(subject: {
+        isMilestone?: boolean;
+        characters?: string[];
+        locations?: string[];
+        groups?: string[];
+        tags?: string[];
+    }): boolean {
         // Milestones filter
-        if (this.filters.milestonesOnly && !evt.isMilestone) {
+        if (this.filters.milestonesOnly && !subject.isMilestone) {
             return false;
         }
 
         // Character filter
         if (this.filters.characters && this.filters.characters.size > 0) {
-            const hasMatchingChar = evt.characters?.some(c => this.filters.characters && this.filters.characters.has(c));
+            const hasMatchingChar = subject.characters?.some(c => this.filters.characters && this.filters.characters.has(c));
             if (!hasMatchingChar) return false;
         }
 
         // Location filter
         if (this.filters.locations && this.filters.locations.size > 0) {
-            if (!evt.location || !this.filters.locations.has(evt.location)) return false;
+            const hasMatchingLocation = subject.locations?.some(l => this.filters.locations && this.filters.locations.has(l));
+            if (!hasMatchingLocation) return false;
         }
 
         // Group filter
         if (this.filters.groups && this.filters.groups.size > 0) {
-            const hasMatchingGroup = evt.groups?.some(g => this.filters.groups && this.filters.groups.has(g));
+            const hasMatchingGroup = subject.groups?.some(g => this.filters.groups && this.filters.groups.has(g));
             if (!hasMatchingGroup) return false;
         }
 
         // Tag filter
         if (this.filters.tags && this.filters.tags.size > 0) {
-            const hasMatchingTag = evt.tags?.some(t => this.filters.tags && this.filters.tags.has(t));
+            const hasMatchingTag = subject.tags?.some(t => this.filters.tags && this.filters.tags.has(t));
             if (!hasMatchingTag) return false;
         }
+
+        return true;
+    }
+
+    /**
+     * Whether a scene placed on the timeline survives the current filters.
+     * Fork membership is deliberately not applied: scenes are never fork
+     * members, so testing it would clear every scene off the timeline as soon
+     * as a fork was selected.
+     */
+    private shouldIncludeScene(scene: Scene): boolean {
+        return this.matchesEntityFilters({
+            characters: scene.linkedCharacters,
+            locations: scene.linkedLocations,
+            groups: scene.linkedGroups,
+            // 'scene' stays available to tag filters alongside the scene's own tags.
+            tags: ['scene', ...(scene.tags || [])],
+        });
+    }
+
+    private shouldIncludeEvent(evt: Event): boolean {
+        if (!this.matchesEntityFilters({
+            isMilestone: evt.isMilestone,
+            characters: evt.characters,
+            locations: evt.location ? [evt.location] : undefined,
+            groups: evt.groups,
+            tags: evt.tags,
+        })) return false;
 
         // Fork filter
         const eventIdentifier = evt.id || evt.name;
