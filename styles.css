@@ -2252,16 +2252,14 @@ If your plugin does not need CSS, delete this file.
     
     .horizontal-button-bar .mobile-button {
         max-width: 200px;
-    }
-}
+    }}
 
 @media (min-width: 1025px) {
     /* Desktop styles - keep existing behavior */
 
     .entity-grid {
         grid-template-columns: repeat(3, 1fr);
-    }
-}
+    }}
 
 /* =================================================================
    DASHBOARD MODAL RESPONSIVE FIXES (Mobile/Tablet)
@@ -2479,8 +2477,7 @@ If your plugin does not need CSS, delete this file.
     .storyteller-responsive-modal button {
         min-height: 36px;
         min-width: 36px;
-    }
-}
+    }}
 
 /* Support for hover-capable styluses (S Pen Air Actions) */
 @media (hover: hover) and (pointer: fine) {
@@ -3010,17 +3007,6 @@ If your plugin does not need CSS, delete this file.
     /* Styles for the text placeholder */
 }
 
-/* Row highlighting */
-.storyteller-timeline-modal .vis-group:hover,
-.storyteller-timeline-view .vis-group:hover {
-    background: rgba(var(--interactive-accent-rgb), 0.05);
-}
-
-.storyteller-timeline-modal .vis-label:hover,
-.storyteller-timeline-view .vis-label:hover {
-    background: var(--background-modifier-hover);
-}
-
 /* Conflict Badge in Toolbar */
 .storyteller-toolbar-btn.storyteller-conflict-badge {
     position: relative;
@@ -3048,18 +3034,6 @@ If your plugin does not need CSS, delete this file.
 .storyteller-badge-icon svg {
     width: 14px;
     height: 14px;
-}
-
-/* Modernize the horizontal axis */
-.vis-time-axis .vis-grid.vis-vertical {
-    border-left: 1px solid var(--background-modifier-border-focus);
-    opacity: 0.3;
-}
-
-.vis-time-axis .vis-text {
-    font-family: var(--font-interface-monospace);
-    font-size: 11px;
-    font-weight: 500;
 }
 
 /* Timeline Custom Scrollbar */
@@ -3121,7 +3095,7 @@ If your plugin does not need CSS, delete this file.
     font-size: var(--font-ui-smaller);
 }
 .storyteller-timeline-container {
-  /* Keep timeline geometry clipped to its frame; tooltip is handled by .vis-tooltip */
+  /* Keep timeline geometry clipped to its frame */
   overflow: hidden;
   position: relative;
   /* Fill available space in timeline view */
@@ -3144,40 +3118,6 @@ If your plugin does not need CSS, delete this file.
 
 .storyteller-timeline-modal .storyteller-timeline-details {
   flex: 0 0 auto;
-}
-
-/* Vis-timeline tooltip fixes - prevent cut-off */
-.vis-tooltip {
-  position: absolute;
-  z-index: 10000;
-  background: var(--background-primary);
-  border: 1px solid var(--background-modifier-border);
-  border-radius: 6px;
-  padding: 8px 12px;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
-  max-width: 350px;
-  word-wrap: break-word;
-  white-space: normal;
-  color: var(--text-normal);
-  font-size: 13px;
-  line-height: 1.5;
-  pointer-events: none;
-}
-
-/* Keep timeline internals bounded; tooltip remains absolute/z-indexed */
-.vis-timeline {
-  overflow: hidden;
-}
-
-/* Make vis-timeline fill the container height in timeline view */
-.storyteller-timeline-view .vis-timeline {
-  height: 100%;
-}
-
-.storyteller-timeline-view .storyteller-timeline-container .vis-timeline {
-  height: 100%;
 }
 
 .storyteller-timeline-filter-toggle {
@@ -3791,8 +3731,7 @@ body.mod-rtl .storyteller-group-members {
   gap: 0.25rem 2rem;
 }
 @media (max-width: 560px) {
-  .storyteller-group-section { grid-template-columns: 1fr; }
-}
+  .storyteller-group-section { grid-template-columns: 1fr; }}
 
 /* Group avatar */
 .storyteller-group-pfp {
@@ -3976,8 +3915,7 @@ body.mod-rtl .storyteller-group-members {
     width: auto;
     flex: 1 1 auto;
     min-width: 0;
-  }
-}
+  }}
 
 /* Simplified mobile dashboard shell */
 .mobile-dashboard.storyteller-dashboard-simplified .storyteller-dashboard-header {
@@ -4230,8 +4168,7 @@ body.mod-rtl .storyteller-group-members {
 
   .mobile-dashboard.storyteller-dashboard-simplified .storyteller-tab-overflow-label {
     display: none;
-  }
-}
+  }}
 
 /* Tutorial section styles */
 .storyteller-tutorial-section {
@@ -8641,8 +8578,7 @@ body.mod-rtl .storyteller-group-members {
 @media (max-width: 500px) {
     .storyteller-economy-detail-two-col {
         grid-template-columns: 1fr;
-    }
-}
+    }}
 
 /* Currencies */
 
@@ -8816,7 +8752,6 @@ body.mod-rtl .storyteller-group-members {
     border-radius: 4px;
     padding: 0.1rem 0.4rem;
 }
-
 
 
 /* ─── Compendium entry-type badges ─────────────────────────────────────────── */
@@ -10025,8 +9960,7 @@ body.mod-rtl .storyteller-group-members {
     }
     .storyteller-campaign-board-pin-label {
         max-width: 120px;
-    }
-}
+    }}
 .storyteller-branch-choice-target { font-size: 0.8rem; color: var(--text-muted); white-space: nowrap; }
 .storyteller-branch-choice-fail { font-size: 0.8rem; color: var(--color-red); white-space: nowrap; }
 .storyteller-branch-hidden-tag { font-size: 0.65rem; padding: 1px 5px; border-radius: 8px; background: var(--background-modifier-border); color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.04em; }
@@ -10217,9 +10151,6 @@ body.mod-rtl .storyteller-group-members {
     --sts-tl-surface: var(--background-primary);
     --sts-tl-panel: var(--background-secondary);
     --sts-tl-border: var(--background-modifier-border);
-    --sts-tl-item-bg: var(--background-secondary);
-    --sts-tl-item-shadow: 0 1px 5px rgba(0, 0, 0, 0.18);
-    --sts-tl-item-shadow-focus: 0 0 0 2px rgba(var(--interactive-accent-rgb, 124, 77, 255), 0.35), 0 2px 8px rgba(0, 0, 0, 0.24);
 }
 
 .storyteller-timeline-view .storyteller-timeline-container,
@@ -10234,218 +10165,11 @@ body.mod-rtl .storyteller-group-members {
     min-height: 260px;
 }
 
-.storyteller-timeline-view .vis-timeline,
-.storyteller-timeline-modal .vis-timeline {
-    background: transparent;
-    border: none;
-    border-radius: 0;
-}
-
-.storyteller-timeline-view .vis-panel.vis-left,
-.storyteller-timeline-modal .vis-panel.vis-left,
-.storyteller-timeline-view .vis-panel.vis-top,
-.storyteller-timeline-modal .vis-panel.vis-top,
-.storyteller-timeline-view .vis-time-axis,
-.storyteller-timeline-modal .vis-time-axis {
-    background: var(--sts-tl-panel);
-}
-
-.storyteller-timeline-view .vis-labelset .vis-label,
-.storyteller-timeline-modal .vis-labelset .vis-label {
-    justify-content: flex-start;
-    padding-left: 8px;
-    padding-right: 8px;
-}
-
-.storyteller-timeline-view .vis-label .vis-inner,
-.storyteller-timeline-modal .vis-label .vis-inner {
-    width: 100%;
-}
-
 .storyteller-timeline-view .sts-group-chip,
 .storyteller-timeline-modal .sts-group-chip {
     width: 100%;
     max-width: none;
     justify-content: flex-start;
-}
-
-.storyteller-timeline-view .vis-foreground .vis-group,
-.storyteller-timeline-modal .vis-foreground .vis-group {
-    min-height: 38px;
-    border-bottom: 1px solid var(--sts-tl-border);
-}
-
-.storyteller-timeline-view .vis-item:not(.vis-line):not(.vis-dot),
-.storyteller-timeline-modal .vis-item:not(.vis-line):not(.vis-dot) {
-    border-radius: 8px;
-    border: 1px solid var(--sts-tl-border);
-    /* vis-timeline's runtime-injected CSS sets color:#1a1a1a — unreadable on dark item surfaces */
-    color: var(--text-normal);
-    box-shadow: var(--sts-tl-item-shadow);
-    z-index: 3;
-    transition: none;
-    animation: none;
-}
-
-/* No vertical "bobbing" on scroll/hover */
-.storyteller-timeline-view .vis-item:hover,
-.storyteller-timeline-modal .vis-item:hover,
-.storyteller-timeline-view .vis-item.vis-selected,
-.storyteller-timeline-modal .vis-item.vis-selected,
-.storyteller-timeline-view .vis-item.vis-box:hover .vis-item-content,
-.storyteller-timeline-modal .vis-item.vis-box:hover .vis-item-content,
-.storyteller-timeline-view .vis-item.vis-point:hover .vis-item-content,
-.storyteller-timeline-modal .vis-item.vis-point:hover .vis-item-content {
-    transition: none;
-    animation: none;
-}
-
-.storyteller-timeline-view .vis-item:hover,
-.storyteller-timeline-modal .vis-item:hover,
-.storyteller-timeline-view .vis-item:hover .vis-item-content,
-.storyteller-timeline-modal .vis-item:hover .vis-item-content {
-    box-shadow: var(--sts-tl-item-shadow);
-    border-color: var(--sts-tl-border);
-}
-
-.storyteller-timeline-view .vis-item.vis-selected,
-.storyteller-timeline-modal .vis-item.vis-selected {
-    box-shadow: var(--sts-tl-item-shadow-focus);
-    z-index: 6;
-}
-
-/* Keep stems independent from card styling so long stems do not get clipped/fade out. */
-.storyteller-timeline-view .vis-item.vis-line,
-.storyteller-timeline-modal .vis-item.vis-line {
-    background: transparent;
-    border: none;
-    border-left: 1px solid color-mix(in srgb, var(--text-muted) 65%, transparent);
-    border-radius: 0;
-    box-shadow: none;
-    z-index: 1;
-    pointer-events: none;
-}
-
-.storyteller-timeline-view .vis-item.vis-dot,
-.storyteller-timeline-modal .vis-item.vis-dot {
-    background: var(--background-primary);
-    border-radius: 50%;
-    border: 3px solid var(--interactive-accent);
-    box-shadow: none;
-    z-index: 4;
-    pointer-events: none;
-}
-
-.storyteller-timeline-view .vis-item[style*="--sts-group-color"].vis-line,
-.storyteller-timeline-modal .vis-item[style*="--sts-group-color"].vis-line {
-    border-left-color: var(--sts-group-color);
-}
-
-.storyteller-timeline-view .vis-item[style*="--sts-group-color"].vis-dot,
-.storyteller-timeline-modal .vis-item[style*="--sts-group-color"].vis-dot {
-    border-color: var(--sts-group-color);
-}
-
-.storyteller-timeline-view .vis-item.vis-box,
-.storyteller-timeline-modal .vis-item.vis-box,
-.storyteller-timeline-view .vis-item.vis-point,
-.storyteller-timeline-modal .vis-item.vis-point {
-    background: var(--sts-tl-item-bg);
-    border-color: var(--sts-tl-border);
-    box-shadow: var(--sts-tl-item-shadow);
-    overflow: hidden;
-}
-
-.storyteller-timeline-view .vis-item.vis-box .vis-item-content,
-.storyteller-timeline-modal .vis-item.vis-box .vis-item-content,
-.storyteller-timeline-view .vis-item.vis-point .vis-item-content,
-.storyteller-timeline-modal .vis-item.vis-point .vis-item-content {
-    background: transparent;
-    border: none;
-    border-radius: inherit;
-    box-shadow: none;
-}
-
-.storyteller-timeline-view .vis-item.vis-range,
-.storyteller-timeline-modal .vis-item.vis-range,
-.storyteller-timeline-view .vis-item.gantt-bar,
-.storyteller-timeline-modal .vis-item.gantt-bar {
-    min-height: 30px;
-    min-width: 88px;
-    border-width: 1px;
-    background-image: none;
-    /* Replace vis's injected #d5ddf6 default so text stays readable on theme surfaces */
-    background-color: var(--sts-tl-item-bg);
-}
-
-.storyteller-timeline-view .vis-item .vis-item-content,
-.storyteller-timeline-modal .vis-item .vis-item-content {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-}
-
-.storyteller-timeline-view .vis-item.gantt-bar .vis-item-content,
-.storyteller-timeline-modal .vis-item.gantt-bar .vis-item-content {
-    position: relative;
-    width: 100%;
-    min-height: 100%;
-    padding-bottom: 6px;
-}
-
-.storyteller-timeline-view .vis-item.gantt-bar .timeline-item-label,
-.storyteller-timeline-modal .vis-item.gantt-bar .timeline-item-label {
-    display: inline-block;
-    min-width: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-}
-
-.storyteller-timeline-view .vis-item.gantt-bar.has-progress .timeline-progress,
-.storyteller-timeline-modal .vis-item.gantt-bar.has-progress .timeline-progress {
-    position: absolute;
-    left: 0;
-    bottom: 1px;
-    height: 4px;
-    border-radius: 999px;
-    background: color-mix(in srgb, var(--interactive-accent) 78%, white 12%);
-    box-shadow: 0 0 0 1px color-mix(in srgb, var(--interactive-accent) 28%, transparent);
-    pointer-events: none;
-}
-
-.storyteller-timeline-view .vis-item.gantt-bar.has-progress,
-.storyteller-timeline-modal .vis-item.gantt-bar.has-progress {
-    position: relative;
-}
-
-.storyteller-timeline-view .vis-item.gantt-bar.has-progress::after,
-.storyteller-timeline-modal .vis-item.gantt-bar.has-progress::after {
-    content: "";
-    position: absolute;
-    left: 0;
-    bottom: 1px;
-    height: 4px;
-    width: var(--sts-progress, 0%);
-    border-radius: 999px;
-    background: color-mix(in srgb, var(--interactive-accent) 78%, white 12%);
-    box-shadow: 0 0 0 1px color-mix(in srgb, var(--interactive-accent) 28%, transparent);
-    pointer-events: none;
-}
-
-.storyteller-timeline-view .vis-item.gantt-bar[style*="--sts-group-color"] .vis-item-content::before,
-.storyteller-timeline-modal .vis-item.gantt-bar[style*="--sts-group-color"] .vis-item-content::before {
-    content: "";
-    display: inline-block;
-    width: 0.42rem;
-    height: 0.9rem;
-    border-radius: 2px;
-    background: var(--sts-group-color);
-    opacity: 0.58;
-    flex: 0 0 auto;
 }
 
 .storyteller-timeline-view .sts-timeline-dependency-layer,
@@ -10480,59 +10204,6 @@ body.mod-rtl .storyteller-group-members {
 .storyteller-timeline-view .sts-timeline-dependency-arrow--dotted,
 .storyteller-timeline-modal .sts-timeline-dependency-arrow--dotted {
     stroke-dasharray: 2, 4;
-}
-
-.storyteller-timeline-view .vis-item.timeline-milestone,
-.storyteller-timeline-modal .vis-item.timeline-milestone,
-.storyteller-timeline-view .vis-item.gantt-milestone,
-.storyteller-timeline-modal .vis-item.gantt-milestone {
-    background: rgba(234, 179, 8, 0.2);
-    border-color: rgba(234, 179, 8, 0.55);
-    color: var(--text-normal);
-}
-
-.storyteller-timeline-view .vis-item.timeline-milestone .vis-item-content,
-.storyteller-timeline-modal .vis-item.timeline-milestone .vis-item-content,
-.storyteller-timeline-view .vis-item.gantt-milestone .vis-item-content,
-.storyteller-timeline-modal .vis-item.gantt-milestone .vis-item-content {
-    background: transparent;
-    border: none;
-    box-shadow: none;
-    color: var(--text-normal);
-    font-weight: 700;
-    text-shadow: none;
-}
-
-/* Stronger status color language shared by timeline and gantt */
-.storyteller-timeline-view .vis-item.sts-status-upcoming,
-.storyteller-timeline-modal .vis-item.sts-status-upcoming {
-    background: linear-gradient(90deg, rgba(59, 130, 246, 0.16), rgba(59, 130, 246, 0.08));
-    border-left: 3px solid #3b82f6;
-}
-.storyteller-timeline-view .vis-item.sts-status-ongoing,
-.storyteller-timeline-modal .vis-item.sts-status-ongoing,
-.storyteller-timeline-view .vis-item.sts-status-in-progress,
-.storyteller-timeline-modal .vis-item.sts-status-in-progress,
-.storyteller-timeline-view .vis-item.sts-status-active,
-.storyteller-timeline-modal .vis-item.sts-status-active {
-    background: linear-gradient(90deg, rgba(245, 158, 11, 0.2), rgba(245, 158, 11, 0.1));
-    border-left: 3px solid #f59e0b;
-}
-.storyteller-timeline-view .vis-item.sts-status-completed,
-.storyteller-timeline-modal .vis-item.sts-status-completed,
-.storyteller-timeline-view .vis-item.sts-status-resolved,
-.storyteller-timeline-modal .vis-item.sts-status-resolved,
-.storyteller-timeline-view .vis-item.sts-status-done,
-.storyteller-timeline-modal .vis-item.sts-status-done {
-    background: linear-gradient(90deg, rgba(16, 185, 129, 0.18), rgba(16, 185, 129, 0.08));
-    border-left: 3px solid #10b981;
-}
-.storyteller-timeline-view .vis-item.sts-status-failed,
-.storyteller-timeline-modal .vis-item.sts-status-failed,
-.storyteller-timeline-view .vis-item.sts-status-cancelled,
-.storyteller-timeline-modal .vis-item.sts-status-cancelled {
-    background: linear-gradient(90deg, rgba(239, 68, 68, 0.18), rgba(239, 68, 68, 0.08));
-    border-left: 3px solid #ef4444;
 }
 
 .storyteller-timeline-view .storyteller-timeline-toolbar,
@@ -10655,103 +10326,6 @@ body.mod-rtl .storyteller-group-members {
     display: none;
 }
 
-/* Stem + card lock: preserve stems, prevent hover/scroll desync and flicker. */
-.storyteller-timeline-view .vis-item .vis-item-content,
-.storyteller-timeline-modal .vis-item .vis-item-content,
-.storyteller-timeline-view .vis-item.vis-line,
-.storyteller-timeline-modal .vis-item.vis-line,
-.storyteller-timeline-view .vis-item.vis-dot,
-.storyteller-timeline-modal .vis-item.vis-dot {
-    transition: none;
-    animation: none;
-}
-
-.storyteller-timeline-view .vis-item .vis-item-content,
-.storyteller-timeline-modal .vis-item .vis-item-content {
-    position: relative;
-    z-index: 3;
-}
-
-.storyteller-timeline-view .vis-item.timeline-milestone:hover,
-.storyteller-timeline-modal .vis-item.timeline-milestone:hover {
-    transition: none;
-}
-
-/* Group color fidelity: items should match the color of the group they are rendered under. */
-.storyteller-timeline-view .vis-item[style*="--sts-group-color"].vis-box,
-.storyteller-timeline-modal .vis-item[style*="--sts-group-color"].vis-box,
-.storyteller-timeline-view .vis-item[style*="--sts-group-color"].vis-point,
-.storyteller-timeline-modal .vis-item[style*="--sts-group-color"].vis-point {
-    background: var(--sts-group-bg, var(--sts-tl-item-bg));
-    border-color: var(--sts-group-color, var(--sts-tl-border));
-}
-
-.storyteller-timeline-view .vis-item[style*="--sts-group-color"].vis-range,
-.storyteller-timeline-modal .vis-item[style*="--sts-group-color"].vis-range,
-.storyteller-timeline-view .vis-item[style*="--sts-group-color"].gantt-bar,
-.storyteller-timeline-modal .vis-item[style*="--sts-group-color"].gantt-bar,
-.storyteller-timeline-view .vis-item[style*="--sts-group-color"].timeline-milestone,
-.storyteller-timeline-modal .vis-item[style*="--sts-group-color"].timeline-milestone {
-    background: var(--sts-group-bg, var(--sts-tl-item-bg));
-    border-color: var(--sts-group-color, var(--sts-tl-border));
-}
-
-.storyteller-timeline-view .vis-item[class*="sts-status-"][style*="--sts-group-color"],
-.storyteller-timeline-modal .vis-item[class*="sts-status-"][style*="--sts-group-color"] {
-    background: var(--sts-group-bg, var(--sts-tl-item-bg));
-    border-left: 3px solid var(--sts-group-color, var(--sts-tl-border));
-}
-
-/* Milestone + narrative marker combos: keep both signals visible and stable. */
-.storyteller-timeline-view .vis-item.timeline-has-narrative-flag,
-.storyteller-timeline-modal .vis-item.timeline-has-narrative-flag {
-    outline: 1px dashed rgba(148, 163, 184, 0.45);
-    outline-offset: -1px;
-}
-
-.storyteller-timeline-view .vis-item.timeline-milestone-flashback,
-.storyteller-timeline-modal .vis-item.timeline-milestone-flashback {
-    box-shadow: inset 0 2px 0 0 rgba(96, 165, 250, 0.85), var(--sts-tl-item-shadow);
-}
-
-.storyteller-timeline-view .vis-item.timeline-milestone-flashforward,
-.storyteller-timeline-modal .vis-item.timeline-milestone-flashforward {
-    box-shadow: inset 0 2px 0 0 rgba(245, 158, 11, 0.85), var(--sts-tl-item-shadow);
-}
-
-/* Timeline hover normalization: one consistent interaction model across all item types. */
-.storyteller-timeline-view .vis-item,
-.storyteller-timeline-modal .vis-item {
-    cursor: pointer;
-    transition: border-color 120ms ease, box-shadow 120ms ease, background-color 120ms ease;
-}
-
-.storyteller-timeline-view .vis-item .vis-item-content,
-.storyteller-timeline-modal .vis-item .vis-item-content {
-    transition: border-color 120ms ease, box-shadow 120ms ease, background-color 120ms ease;
-}
-
-.storyteller-timeline-view .vis-item:hover:not(.vis-selected),
-.storyteller-timeline-modal .vis-item:hover:not(.vis-selected) {
-    border-color: color-mix(in srgb, var(--interactive-accent) 58%, var(--sts-tl-border) 42%);
-    box-shadow: 0 0 0 1px rgba(var(--interactive-accent-rgb, 124, 77, 255), 0.28), var(--sts-tl-item-shadow);
-}
-
-.storyteller-timeline-view .vis-item.vis-range:hover:not(.vis-selected),
-.storyteller-timeline-modal .vis-item.vis-range:hover:not(.vis-selected),
-.storyteller-timeline-view .vis-item.gantt-bar:hover:not(.vis-selected),
-.storyteller-timeline-modal .vis-item.gantt-bar:hover:not(.vis-selected) {
-    box-shadow: 0 0 0 1px rgba(var(--interactive-accent-rgb, 124, 77, 255), 0.28), var(--sts-tl-item-shadow);
-}
-
-.storyteller-timeline-view .vis-item.timeline-milestone:hover:not(.vis-selected),
-.storyteller-timeline-modal .vis-item.timeline-milestone:hover:not(.vis-selected),
-.storyteller-timeline-view .vis-item.gantt-milestone:hover:not(.vis-selected),
-.storyteller-timeline-modal .vis-item.gantt-milestone:hover:not(.vis-selected) {
-    border-color: color-mix(in srgb, #f59e0b 70%, var(--interactive-accent) 30%);
-    box-shadow: 0 0 0 1px rgba(245, 158, 11, 0.34), var(--sts-tl-item-shadow);
-}
-
 /* Mobile timeline view: stop clipping the desktop-height frame so the leaf can scroll naturally. */
 .storyteller-timeline-view--mobile {
     height: auto;
@@ -10764,12 +10338,6 @@ body.mod-rtl .storyteller-group-members {
 
 .storyteller-timeline-view--mobile .storyteller-timeline-container {
     flex: 0 0 auto;
-    min-height: 360px;
-}
-
-.storyteller-timeline-view--mobile .vis-timeline,
-.storyteller-timeline-view--mobile .storyteller-timeline-container .vis-timeline {
-    height: auto;
     min-height: 360px;
 }
 
@@ -10794,7 +10362,6 @@ body.mod-rtl .storyteller-group-members {
     min-width: 0;
     max-width: 100%;
 }
-
 
 
 .storyteller-guide-modal .modal-content {
