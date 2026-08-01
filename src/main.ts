@@ -32,7 +32,7 @@ import {
 import { stringifyYamlWithLogging, validateFrontmatterPreservation } from './utils/YamlSerializer';
 import { stripWikiLink } from './utils/WikiLinks';
 import { setLocale, t } from './i18n/strings';
-import { FolderResolver, FolderResolverOptions, EntityFolderType } from './folders/FolderResolver';
+import { FolderResolver, FolderResolverOptions, EntityFolderType, StoryFolderOverrides } from './folders/FolderResolver';
 import { PromptModal } from './modals/ui/PromptModal';
 import { ConfirmModal, confirmWithModal } from './modals/ui/ConfirmModal';
 import { CharacterModal } from './modals/CharacterModal';
@@ -316,6 +316,7 @@ const FRONTMATTER_LINK_ONLY_SCALAR_FIELDS = new Set([
     factionFolderPath?: string;
     magicSystemFolderPath?: string;
     groupFolderPath?: string;
+    compendiumFolderPath?: string;
     bookFolderPath?: string;
     sessionsFolderPath?: string;
 
@@ -442,6 +443,7 @@ const FRONTMATTER_LINK_ONLY_SCALAR_FIELDS = new Set([
     sceneFolderPath: '',
     mapFolderPath: '',
     groupFolderPath: '',
+    compendiumFolderPath: '',
     bookFolderPath: '',
     sessionsFolderPath: '',
     enableOneStoryMode: false,
@@ -550,6 +552,7 @@ export default class StorytellerSuitePlugin extends Plugin {
             factionFolderPath: this.settings.factionFolderPath,
             magicSystemFolderPath: this.settings.magicSystemFolderPath,
             groupFolderPath: this.settings.groupFolderPath,
+            compendiumFolderPath: this.settings.compendiumFolderPath,
             bookFolderPath: this.settings.bookFolderPath,
             sessionsFolderPath: this.settings.sessionsFolderPath,
             enableOneStoryMode: this.settings.enableOneStoryMode,
@@ -1255,7 +1258,7 @@ export default class StorytellerSuitePlugin extends Plugin {
 	/**
 	 * Update an existing story's name and description
 	 */
-	async updateStory(storyId: string, name: string, description?: string): Promise<void> {
+	async updateStory(storyId: string, name: string, description?: string, folderOverrides?: StoryFolderOverrides): Promise<void> {
 		const story = this.settings.stories.find(s => s.id === storyId);
 		if (!story) {
 			throw new Error('Story not found');
@@ -1284,6 +1287,19 @@ export default class StorytellerSuitePlugin extends Plugin {
 		// Update the story name and description in memory
 		story.name = name;
 		story.description = description;
+		if (folderOverrides !== undefined) {
+			// An empty object is stored as absent so the story cleanly inherits
+			// every plugin-wide folder setting rather than carrying blank keys.
+			const populated = Object.entries(folderOverrides)
+				.filter(([, value]) => typeof value === 'string' && value.trim() !== '');
+			const next = populated.length ? Object.fromEntries(populated) : undefined;
+			if (JSON.stringify(next) !== JSON.stringify(story.folderOverrides)) {
+				story.folderOverrides = next;
+				// The story's entities now resolve somewhere else, so the cached
+				// name/id index built from the old folders is stale.
+				this.invalidateFrontmatterReferenceIndexes();
+			}
+		}
 		await this.saveSettings();
 	}
 
@@ -9122,6 +9138,7 @@ export default class StorytellerSuitePlugin extends Plugin {
         if (!('chapterFolderPath' in this.settings)) { this.settings.chapterFolderPath = DEFAULT_SETTINGS.chapterFolderPath; settingsUpdated = true; }
         if (!('sceneFolderPath' in this.settings)) { this.settings.sceneFolderPath = DEFAULT_SETTINGS.sceneFolderPath; settingsUpdated = true; }
         if (!('groupFolderPath' in this.settings)) { this.settings.groupFolderPath = DEFAULT_SETTINGS.groupFolderPath; settingsUpdated = true; }
+        if (!('compendiumFolderPath' in this.settings)) { this.settings.compendiumFolderPath = DEFAULT_SETTINGS.compendiumFolderPath; settingsUpdated = true; }
         if (!('bookFolderPath' in this.settings)) { this.settings.bookFolderPath = DEFAULT_SETTINGS.bookFolderPath; settingsUpdated = true; }
         if (!('sessionsFolderPath' in this.settings)) { this.settings.sessionsFolderPath = DEFAULT_SETTINGS.sessionsFolderPath; settingsUpdated = true; }
         if (!('compileWorkflows' in this.settings) || !Array.isArray(this.settings.compileWorkflows)) {

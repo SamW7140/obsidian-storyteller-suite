@@ -1046,6 +1046,12 @@ export interface Story {
     created: string;
     /** Optional description of the story */
     description?: string;
+    /**
+     * Per-story folder layout. Any key left blank or absent inherits the
+     * plugin-wide folder setting, so a story that has never been customized
+     * keeps resolving exactly where its notes already are.
+     */
+    folderOverrides?: import('./folders/FolderResolver').StoryFolderOverrides;
 }
 
 /**

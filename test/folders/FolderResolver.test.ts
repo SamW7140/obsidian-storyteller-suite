@@ -72,4 +72,79 @@ describe('FolderResolver', () => {
       expect(r.getEntityFolder('magicSystem')).toBe('Root/My_Story/MagicSystems');
     });
   });
+
+  describe('per-story folder overrides', () => {
+    const globals = {
+      enableCustomEntityFolders: true,
+      storyRootFolderTemplate: 'Shared/{storySlug}',
+      characterFolderPath: 'Shared/{storySlug}/Cast',
+    };
+
+    it('a story with no overrides resolves exactly as before', () => {
+      const r = new FolderResolver(globals, () => ({ id: 's1', name: 'My Story' }));
+      expect(r.getEntityFolder('character')).toBe('Shared/My_Story/Cast');
+      expect(r.getEntityFolder('location')).toBe('Shared/My_Story/Locations');
+    });
+
+    it('an override replaces the global path for that entity only', () => {
+      const r = new FolderResolver(globals, () => ({
+        id: 's2', name: 'Other Story',
+        folderOverrides: { characterFolderPath: 'Elsewhere/People' },
+      }));
+      expect(r.getEntityFolder('character')).toBe('Elsewhere/People');
+      // untouched entity still follows the global root
+      expect(r.getEntityFolder('location')).toBe('Shared/Other_Story/Locations');
+    });
+
+    it('a blank override inherits the global value, it does not reset to the default leaf', () => {
+      const r = new FolderResolver(globals, () => ({
+        id: 's3', name: 'My Story',
+        folderOverrides: { characterFolderPath: '   ' },
+      }));
+      expect(r.getEntityFolder('character')).toBe('Shared/My_Story/Cast');
+    });
+
+    it('overriding the root template moves every inherited subfolder with it', () => {
+      const r = new FolderResolver(globals, () => ({
+        id: 's4', name: 'Second Book',
+        folderOverrides: { storyRootFolderTemplate: 'Books/{storyName}' },
+      }));
+      expect(r.getEntityFolder('location')).toBe('Books/Second Book/Locations');
+      expect(r.getStoryRootFolder()).toBe('Books/Second Book');
+    });
+
+    it('overrides support the same placeholders as the global settings', () => {
+      const r = new FolderResolver(globals, () => ({
+        id: 's5', name: 'My Story',
+        folderOverrides: { eventFolderPath: 'Archive/{storyId}/Events' },
+      }));
+      expect(r.getEntityFolder('event')).toBe('Archive/s5/Events');
+    });
+
+    it('two stories resolve to different folders from the same settings', () => {
+      let active = { id: 'a', name: 'Alpha' } as { id: string; name: string; folderOverrides?: Record<string, string> };
+      const r = new FolderResolver(globals, () => active);
+      expect(r.getEntityFolder('character')).toBe('Shared/Alpha/Cast');
+      active = { id: 'b', name: 'Beta', folderOverrides: { characterFolderPath: 'Beta/Folk' } };
+      expect(r.getEntityFolder('character')).toBe('Beta/Folk');
+    });
+
+    it('usesBookName honours a story override', () => {
+      const r = new FolderResolver(globals, () => ({
+        id: 's6', name: 'My Story',
+        folderOverrides: { chapterFolderPath: 'Shared/{storySlug}/{bookName}/Chapters' },
+      }));
+      expect(r.usesBookName('chapter')).toBe(true);
+      expect(r.usesBookName('character')).toBe(false);
+    });
+
+    it('compendium entries honour a configured folder path', () => {
+      const r = new FolderResolver({
+        enableCustomEntityFolders: true,
+        storyRootFolderTemplate: 'Root/{storySlug}',
+        compendiumFolderPath: 'Root/{storySlug}/Lore',
+      }, () => story);
+      expect(r.getEntityFolder('compendiumEntry')).toBe('Root/My_Story/Lore');
+    });
+  });
 });

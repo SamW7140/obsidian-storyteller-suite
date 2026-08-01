@@ -2,6 +2,7 @@ import { App, PluginSettingTab, Setting, Notice, TFolder, setIcon } from 'obsidi
 import StorytellerSuitePlugin from './main';
 import { NewStoryModal } from './modals/NewStoryModal';
 import { EditStoryModal } from './modals/EditStoryModal';
+import type { StoryFolderOverrides } from './folders/FolderResolver';
 import { FolderSuggestModal } from './modals/FolderSuggestModal';
 import { CustomSheetTemplateModal } from './modals/CustomSheetTemplateModal';
 import { getGettingStartedGuide, renderGuideDocument } from './tutorial/StorytellerGuideContent';
@@ -336,8 +337,8 @@ export class StorytellerSuiteSettingTab extends PluginSettingTab {
                         const existingNames = this.plugin.settings.stories.map(s => s.name);
                         new EditStoryModal(
                             this.app, this.plugin, story, existingNames,
-                            async (name: string, description?: string) => {
-                                await this.plugin.updateStory(story.id, name, description);
+                            async (name: string, description?: string, folderOverrides?: StoryFolderOverrides) => {
+                                await this.plugin.updateStory(story.id, name, description, folderOverrides);
                                 this.display();
                             }
                         ).open();
