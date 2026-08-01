@@ -3,6 +3,7 @@ import StorytellerSuitePlugin from './main';
 import { NewStoryModal } from './modals/NewStoryModal';
 import { EditStoryModal } from './modals/EditStoryModal';
 import type { StoryFolderOverrides } from './folders/FolderResolver';
+import { MODAL_FIELD_SETS, isModalFieldVisible } from './modals/entity/ModalFieldVisibility';
 import { FolderSuggestModal } from './modals/FolderSuggestModal';
 import { CustomSheetTemplateModal } from './modals/CustomSheetTemplateModal';
 import { getGettingStartedGuide, renderGuideDocument } from './tutorial/StorytellerGuideContent';
@@ -399,6 +400,45 @@ export class StorytellerSuiteSettingTab extends PluginSettingTab {
     }
 
     // ─── Tab: Dashboard ───────────────────────────────────────────────────────
+    /**
+     * Turn individual entity modal fields off. Hiding is presentation only: a
+     * hidden field keeps whatever the entity already has stored, so turning one
+     * back on shows the old value again.
+     */
+    private renderModalFieldsSection(container: HTMLElement): void {
+        new Setting(container)
+            .setName('Entity modal fields')
+            .setDesc('Turn off fields you never use so they stop crowding the create and edit dialogs. Hiding a field does not delete anything already stored in it.')
+            .setHeading();
+
+        for (const [entityType, fields] of Object.entries(MODAL_FIELD_SETS)) {
+            const label = entityType.charAt(0).toUpperCase() + entityType.slice(1);
+            new Setting(container).setName(`${label} modal`).setHeading();
+
+            let lastGroup: string | undefined;
+            for (const field of fields) {
+                if (field.group && field.group !== lastGroup) {
+                    container.createEl('p', { cls: 'setting-item-description', text: field.group });
+                    lastGroup = field.group;
+                }
+                new Setting(container)
+                    .setName(field.label)
+                    .addToggle(toggle => toggle
+                        .setValue(isModalFieldVisible(this.plugin.settings.hiddenModalFields, entityType, field.key))
+                        .onChange(async (visible) => {
+                            const hidden = { ...(this.plugin.settings.hiddenModalFields || {}) };
+                            const current = new Set(Array.isArray(hidden[entityType]) ? hidden[entityType] : []);
+                            if (visible) current.delete(field.key);
+                            else current.add(field.key);
+                            hidden[entityType] = Array.from(current);
+                            this.plugin.settings.hiddenModalFields = hidden;
+                            await this.plugin.saveSettings();
+                        })
+                    );
+            }
+        }
+    }
+
     private renderDashboardTab(container: HTMLElement): void {
         new Setting(container).setName('Writing goal').setHeading();
 
@@ -541,6 +581,8 @@ export class StorytellerSuiteSettingTab extends PluginSettingTab {
                     })
                 );
         });
+
+        this.renderModalFieldsSection(container);
     }
 
     // ─── Tab: Folders ─────────────────────────────────────────────────────────

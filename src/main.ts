@@ -309,6 +309,12 @@ const FRONTMATTER_LINK_ONLY_SCALAR_FIELDS = new Set([
     pacingAnalysis?: PacingAnalysis;
     trackWritingSessions?: boolean;
 
+    /**
+     * Entity modal fields the user has turned off, keyed by entity type.
+     * Presentation only: a hidden field keeps whatever value it already holds.
+     */
+    hiddenModalFields?: Record<string, string[]>;
+
     /** World-Building */
     enableWorldBuilding?: boolean;
     cultureFolderPath?: string;
@@ -442,6 +448,7 @@ const FRONTMATTER_LINK_ONLY_SCALAR_FIELDS = new Set([
     chapterFolderPath: '',
     sceneFolderPath: '',
     mapFolderPath: '',
+    hiddenModalFields: {},
     groupFolderPath: '',
     compendiumFolderPath: '',
     bookFolderPath: '',
