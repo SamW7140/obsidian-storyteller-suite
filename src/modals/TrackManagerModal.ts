@@ -142,10 +142,12 @@ export class TrackManagerModal extends Modal {
         const visibilityBtn = headerEl.createEl('button', {
             cls: 'storyteller-track-visibility-btn'
         });
-        setIcon(visibilityBtn, track.visible ? 'eye' : 'eye-off');
+        // A track with no explicit visible flag is visible, so compare against
+        // false rather than testing truthiness.
+        setIcon(visibilityBtn, track.visible !== false ? 'eye' : 'eye-off');
         visibilityBtn.addEventListener('click', () => {
-            track.visible = !track.visible;
-            setIcon(visibilityBtn, track.visible ? 'eye' : 'eye-off');
+            track.visible = track.visible === false;
+            setIcon(visibilityBtn, track.visible !== false ? 'eye' : 'eye-off');
         });
 
         // Delete button

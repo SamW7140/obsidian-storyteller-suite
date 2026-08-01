@@ -91,7 +91,7 @@ export class TrackListModal extends ResponsiveModal {
             const headerRow = trackContent.createDiv('storyteller-track-header');
             headerRow.createEl('h3', { text: track.name });
 
-            if (!track.visible) {
+            if (track.visible === false) {
                 headerRow.createEl('span', {
                     text: '(Hidden)',
                     cls: 'storyteller-track-hidden-badge'
