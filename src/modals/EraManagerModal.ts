@@ -30,6 +30,7 @@ export class EraManagerModal extends Modal {
     async onOpen(): Promise<void> {
         const { contentEl } = this;
         contentEl.empty();
+        this.modalEl.addClass('storyteller-modal-scroll');
         contentEl.addClass('storyteller-era-manager');
 
         // Load events for auto-assignment
@@ -170,10 +171,12 @@ export class EraManagerModal extends Modal {
         const visibilityBtn = headerEl.createEl('button', {
             cls: 'storyteller-era-visibility-btn'
         });
-        setIcon(visibilityBtn, era.visible ? 'eye' : 'eye-off');
+        // An era with no explicit visible flag is visible, so compare against
+        // false rather than testing truthiness.
+        setIcon(visibilityBtn, era.visible !== false ? 'eye' : 'eye-off');
         visibilityBtn.addEventListener('click', () => {
-            era.visible = !era.visible;
-            setIcon(visibilityBtn, era.visible ? 'eye' : 'eye-off');
+            era.visible = era.visible === false;
+            setIcon(visibilityBtn, era.visible !== false ? 'eye' : 'eye-off');
         });
 
         // Delete button

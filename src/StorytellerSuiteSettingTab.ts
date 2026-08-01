@@ -22,8 +22,12 @@ import type { TemplateEntityType } from './templates/TemplateTypes';
 import { CalendarRegistry } from './calendar/CalendarRegistry';
 import { encodeShareCode, makeCalendarDocument, makeThemeDocument } from './calendar/TimelineDocuments';
 import { CalendarManagerModal } from './modals/CalendarManagerModal';
+import { PlatformUtils } from './utils/PlatformUtils';
 
 type TabId = 'stories' | 'dashboard' | 'folders' | 'timeline' | 'maps' | 'templates' | 'gallery' | 'help';
+
+// Video walkthrough for the Help tab. Empty shows a coming-soon state.
+const TUTORIAL_VIDEO_URL = 'https://www.youtube.com/watch?v=HL0i6bUpVn0';
 
 interface TabDef { id: TabId; icon: string; label: string; }
 
@@ -497,6 +501,25 @@ export class StorytellerSuiteSettingTab extends PluginSettingTab {
                             await view.onOpen();
                         }
                     }));
+                })
+            );
+
+        new Setting(container).setName('Interface').setHeading();
+
+        new Setting(container)
+            .setName('Interface layout')
+            .setDesc('Auto-detect chooses desktop, tablet, or phone layouts from the platform. Force a layout if detection gets it wrong, for example a touch-screen laptop flipping into tablet mode. Existing dialogs pick up the change when reopened.')
+            .addDropdown(dropdown => dropdown
+                .addOption('auto', 'Auto-detect')
+                .addOption('desktop', 'Desktop')
+                .addOption('tablet', 'Tablet')
+                .addOption('phone', 'Phone')
+                .setValue(this.plugin.settings.interfaceMode ?? 'auto')
+                .onChange(async (value) => {
+                    const mode = value as import('./utils/PlatformUtils').InterfaceLayoutOverride;
+                    this.plugin.settings.interfaceMode = mode;
+                    PlatformUtils.setLayoutOverride(mode);
+                    await this.plugin.saveSettings();
                 })
             );
 
@@ -1367,6 +1390,23 @@ export class StorytellerSuiteSettingTab extends PluginSettingTab {
                 .setButtonText('Open highlights')
                 .onClick(() => this.plugin.openWhatsNewGuide()));
 
+        if (TUTORIAL_VIDEO_URL) {
+            new Setting(container)
+                .setName('Video tutorial')
+                .setDesc('Watch the video tutorial for Storyteller Suite.')
+                .addButton(button => button
+                    .setButtonText('Watch video')
+                    .setCta()
+                    .onClick(() => window.open(TUTORIAL_VIDEO_URL, '_blank')));
+        } else {
+            new Setting(container)
+                .setName('Video tutorial')
+                .setDesc('A video tutorial is on its way. It will appear here when it is published.')
+                .addButton(button => button
+                    .setButtonText('Coming soon')
+                    .setDisabled(true));
+        }
+
         new Setting(container)
             .setName(t('showTutorialSection'))
             .setDesc(t('showTutorialDesc'))
@@ -1401,7 +1441,16 @@ export class StorytellerSuiteSettingTab extends PluginSettingTab {
             .addButton(button => button
                 .setButtonText(t('github'))
                 .setTooltip('View source code')
-                .onClick(() => window.open('https://github.com/SamW7140/obsidian-storyteller-suite', '_blank'))
+                .onClick(() => window.open('https://github.com/Maws7140/obsidian-storyteller-suite', '_blank'))
+            );
+
+        new Setting(container)
+            .setName('Contact')
+            .setDesc('Found a bug or have a feature request? Open an issue on GitHub.')
+            .addButton(button => button
+                .setButtonText('Open an issue')
+                .setTooltip('Report a bug or request a feature')
+                .onClick(() => window.open('https://github.com/Maws7140/obsidian-storyteller-suite/issues', '_blank'))
             );
     }
 

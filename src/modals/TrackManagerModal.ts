@@ -31,6 +31,7 @@ export class TrackManagerModal extends Modal {
     async onOpen(): Promise<void> {
         const { contentEl } = this;
         contentEl.empty();
+        this.modalEl.addClass('storyteller-modal-scroll');
         contentEl.addClass('storyteller-track-manager');
 
         // Load entities for filters (story-specific)
@@ -141,10 +142,12 @@ export class TrackManagerModal extends Modal {
         const visibilityBtn = headerEl.createEl('button', {
             cls: 'storyteller-track-visibility-btn'
         });
-        setIcon(visibilityBtn, track.visible ? 'eye' : 'eye-off');
+        // A track with no explicit visible flag is visible, so compare against
+        // false rather than testing truthiness.
+        setIcon(visibilityBtn, track.visible !== false ? 'eye' : 'eye-off');
         visibilityBtn.addEventListener('click', () => {
-            track.visible = !track.visible;
-            setIcon(visibilityBtn, track.visible ? 'eye' : 'eye-off');
+            track.visible = track.visible === false;
+            setIcon(visibilityBtn, track.visible !== false ? 'eye' : 'eye-off');
         });
 
         // Delete button

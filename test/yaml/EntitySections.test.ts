@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { buildFrontmatter, isStampedEntityTypeCompatible, normalizeEntityType, parseSectionsFromMarkdown, toSafeFileName, parseFrontmatterFromContent } from '../../src/yaml/EntitySections';
+import { buildFrontmatter, parseTypedRelationships, parseEntityRefs, parseLocationHistory, isStampedEntityTypeCompatible, normalizeEntityType, parseSectionsFromMarkdown, toSafeFileName, parseFrontmatterFromContent } from '../../src/yaml/EntitySections';
 
 describe('EntitySections', () => {
   it('buildFrontmatter filters disallowed keys and multiline strings', () => {
@@ -454,6 +454,136 @@ status: active
 
       // Field that wasn't in src but was in original should be preserved
       expect(fm.field4).toBe('preserved');
+    });
+  });
+
+  describe('typed relationship serialization', () => {
+    it('serializes connections as readable strings in frontmatter', () => {
+      const src = {
+        id: '1',
+        name: 'Mira',
+        connections: [
+          { type: 'mentor', target: 'Archivist Noe', label: 'trained Mira' },
+          { type: 'ally', target: 'Captain Sera Vale' }
+        ]
+      } as any;
+      const fm = buildFrontmatter('character', src);
+      expect(fm.connections).toEqual([
+        'mentor: [[Archivist Noe]] — trained Mira',
+        'ally: [[Captain Sera Vale]]'
+      ]);
+    });
+
+    it('round-trips string connections back to typed objects', () => {
+      const parsed = parseTypedRelationships([
+        'mentor: [[Archivist Noe]] — trained Mira',
+        'ally: [[Captain Sera Vale]]',
+        { type: 'rival', target: 'Tollen Brask', label: 'legacy object form' },
+        '[[Bare Link]]'
+      ]);
+      expect(parsed).toEqual([
+        { type: 'mentor', target: 'Archivist Noe', label: 'trained Mira' },
+        { type: 'ally', target: 'Captain Sera Vale' },
+        { type: 'rival', target: 'Tollen Brask', label: 'legacy object form' },
+        { type: 'neutral', target: 'Bare Link' }
+      ]);
+    });
+
+    it('keeps target when the wiki link has an alias', () => {
+      const parsed = parseTypedRelationships(['enemy: [[Archivist Noe|Noe]] — Network']);
+      expect(parsed).toEqual([{ type: 'enemy', target: 'Archivist Noe', label: 'Network' }]);
+    });
+
+    it('serializes entityRefs as readable strings in frontmatter', () => {
+      const src = {
+        id: 'loc-1',
+        name: 'Beacon Market',
+        entityRefs: [
+          { entityId: '[[Mira Vey]]', entityType: 'character', relationship: 'associated' },
+          { entityId: '[[The Ninth Bell Rings]]', entityType: 'event' }
+        ]
+      } as any;
+      const fm = buildFrontmatter('location', src);
+      expect(fm.entityRefs).toEqual([
+        'character: [[Mira Vey]] — associated',
+        'event: [[The Ninth Bell Rings]]'
+      ]);
+    });
+
+    it('round-trips entityRef strings back to objects', () => {
+      const parsed = parseEntityRefs([
+        'character: [[Mira Vey]] — associated',
+        'event: [[The Ninth Bell Rings]]',
+        { entityId: 'legacy-id', entityType: 'item' }
+      ]);
+      expect(parsed).toEqual([
+        { entityType: 'character', entityId: 'Mira Vey', relationship: 'associated' },
+        { entityType: 'event', entityId: 'The Ninth Bell Rings' },
+        { entityId: 'legacy-id', entityType: 'item' }
+      ]);
+    });
+
+    it('serializes locationHistory with optional time ranges', () => {
+      const src = {
+        id: '1',
+        name: 'Mira',
+        locationHistory: [
+          { locationId: '[[Beacon Market]]', relationship: 'moved to' },
+          { locationId: 'Old Town', relationship: 'lived in', timeRange: { start: '1200', end: '1210' } },
+          { locationId: 'The Reef', relationship: 'exiled to', timeRange: { start: '1211' } }
+        ]
+      } as any;
+      const fm = buildFrontmatter('character', src);
+      expect(fm.locationHistory).toEqual([
+        'moved to: [[Beacon Market]]',
+        'lived in: [[Old Town]] (1200 – 1210)',
+        'exiled to: [[The Reef]] (from 1211)'
+      ]);
+    });
+
+    it('round-trips locationHistory strings back to objects', () => {
+      const parsed = parseLocationHistory([
+        'moved to: [[Beacon Market]]',
+        'lived in: [[Old Town]] (1200 – 1210)',
+        'exiled to: [[The Reef]] (from 1211)',
+        'returned before: [[Glass Harbor]] (until 1215)'
+      ]);
+      expect(parsed).toEqual([
+        { locationId: 'Beacon Market', relationship: 'moved to' },
+        { locationId: 'Old Town', relationship: 'lived in', timeRange: { start: '1200', end: '1210' } },
+        { locationId: 'The Reef', relationship: 'exiled to', timeRange: { start: '1211' } },
+        { locationId: 'Glass Harbor', relationship: 'returned before', timeRange: { end: '1215' } }
+      ]);
+    });
+  });
+
+  describe('customFields flatten with original frontmatter', () => {
+    it('does not re-add the stale customFields container after promoting entries', () => {
+      const original = {
+        entityType: 'character',
+        name: 'Mira',
+        customFields: { 'Guild seat': 'Third chair' }
+      };
+      const src = {
+        name: 'Mira',
+        customFields: { 'Guild seat': 'Third chair', 'Chart signature': 'Triple bell-glyph' }
+      } as any;
+      const fm = buildFrontmatter('character', src, undefined, { originalFrontmatter: original });
+      expect(fm['Guild seat']).toBe('Third chair');
+      expect(fm['Chart signature']).toBe('Triple bell-glyph');
+      expect(fm).not.toHaveProperty('customFields');
+    });
+
+    it('still writes the container for unpromoted entries that collide with top-level keys', () => {
+      const src = {
+        name: 'Mira',
+        customFields: { name: 'collides with top-level' }
+      } as any;
+      const fm = buildFrontmatter('character', src, undefined, {
+        originalFrontmatter: { entityType: 'character', name: 'Mira', customFields: { name: 'collides with top-level' } }
+      });
+      expect(fm.name).toBe('Mira');
+      expect(fm.customFields).toEqual({ name: 'collides with top-level' });
     });
   });
 });

@@ -67,8 +67,9 @@ export class EraListModal extends ResponsiveModal {
             return;
         }
 
-        // Sort eras by start date
-        const sortedEras = EraManager.getVisibleEras([...this.eras, ...this.eras.filter(e => e.visible === false)]);
+        // Sort eras by start date. Hidden eras stay in this list so they can be
+        // shown again; the timeline itself is what filters them out.
+        const sortedEras = EraManager.sortEras(this.eras);
 
         for (const era of sortedEras) {
             const eraCard = this.listContainer.createDiv('storyteller-era-card');
@@ -86,7 +87,7 @@ export class EraListModal extends ResponsiveModal {
             const headerRow = eraContent.createDiv('storyteller-era-header');
             headerRow.createEl('h3', { text: era.name });
 
-            if (!era.visible) {
+            if (era.visible === false) {
                 headerRow.createEl('span', {
                     text: '(Hidden)',
                     cls: 'storyteller-era-hidden-badge'

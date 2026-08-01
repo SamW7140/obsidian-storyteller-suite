@@ -335,27 +335,33 @@ export class EraManager {
     }
 
     /**
+     * Sort eras by explicit sortOrder, then by start date. Does not filter, so
+     * management UIs can list hidden eras alongside visible ones.
+     */
+    static sortEras(eras: TimelineEra[]): TimelineEra[] {
+        return [...eras].sort((a, b) => {
+            // Sort by explicit sortOrder first
+            if (a.sortOrder !== undefined && b.sortOrder !== undefined) {
+                return a.sortOrder - b.sortOrder;
+            }
+            if (a.sortOrder !== undefined) return -1;
+            if (b.sortOrder !== undefined) return 1;
+
+            // Then by start date
+            const aStart = parseEventDate(a.startDate);
+            const bStart = parseEventDate(b.startDate);
+
+            if (!aStart.start || !bStart.start) return 0;
+
+            return aStart.start < bStart.start ? -1 : 1;
+        });
+    }
+
+    /**
      * Get visible eras sorted by start date
      */
     static getVisibleEras(eras: TimelineEra[]): TimelineEra[] {
-        return eras
-            .filter(era => era.visible !== false)
-            .sort((a, b) => {
-                // Sort by explicit sortOrder first
-                if (a.sortOrder !== undefined && b.sortOrder !== undefined) {
-                    return a.sortOrder - b.sortOrder;
-                }
-                if (a.sortOrder !== undefined) return -1;
-                if (b.sortOrder !== undefined) return 1;
-
-                // Then by start date
-                const aStart = parseEventDate(a.startDate);
-                const bStart = parseEventDate(b.startDate);
-
-                if (!aStart.start || !bStart.start) return 0;
-
-                return aStart.start < bStart.start ? -1 : 1;
-            });
+        return this.sortEras(eras.filter(era => era.visible !== false));
     }
 
     /**

@@ -23,6 +23,9 @@ import {
     normalizeEntityType,
     parseSectionsFromMarkdown,
     parseFrontmatterFromContent,
+    parseTypedRelationships,
+    parseEntityRefs,
+    parseLocationHistory,
     WIKI_LINK_ARRAY_FIELDS,
     WIKI_LINK_SCALAR_FIELDS,
 } from './yaml/EntitySections';
@@ -401,6 +404,12 @@ const FRONTMATTER_LINK_ONLY_SCALAR_FIELDS = new Set([
      */
     enableCustomCompileJs?: boolean;
 
+    /**
+     * Interface layout override. 'auto' detects from the platform; the rest
+     * force a layout for convertibles (Surface etc.) where detection flips.
+     */
+    interfaceMode?: import('./utils/PlatformUtils').InterfaceLayoutOverride;
+
     /** Whether to prompt when a new .md file appears in the scene folder */
     promptNewSceneFiles?: boolean;
 
@@ -509,6 +518,7 @@ const FRONTMATTER_LINK_ONLY_SCALAR_FIELDS = new Set([
     defaultCharacterSheetTemplateId: 'classic',
     customCompileSteps: [],
     enableCustomCompileJs: false,
+    interfaceMode: 'auto',
     promptNewSceneFiles: true,
 }
 
@@ -1439,6 +1449,8 @@ export default class StorytellerSuitePlugin extends Plugin {
 	 */
 	async onload() {
 		await this.loadSettings();
+
+		PlatformUtils.setLayoutOverride(this.settings.interfaceMode);
 
 		// Initialize word count tracker
         this.wordTracker = new WordCountTracker(this);
@@ -3962,6 +3974,23 @@ export default class StorytellerSuitePlugin extends Plugin {
                 const existing = data[fieldName];
                 if (existing !== undefined && existing !== null && existing !== '') continue;
                 data[fieldName] = allSections[sectionName];
+            }
+
+            // Connections are stored as readable strings ("type: [[Target]] — label")
+            // so the Properties panel renders them; convert back to typed objects.
+            // Legacy object-form entries pass through unchanged.
+            if (Array.isArray(data['connections'])) {
+                data['connections'] = parseTypedRelationships(data['connections'] as unknown[]);
+            }
+
+            // entityRefs and locationHistory use the same readable-string form;
+            // parsed objects keep plain names here — normalizeFrontmatterEntityReferences
+            // below resolves them to canonical ids exactly as before.
+            if (Array.isArray(data['entityRefs'])) {
+                data['entityRefs'] = parseEntityRefs(data['entityRefs'] as unknown[]);
+            }
+            if (Array.isArray(data['locationHistory'])) {
+                data['locationHistory'] = parseLocationHistory(data['locationHistory'] as unknown[]);
             }
 
             // Scene: beats is an array on the entity; convert the raw section text now.

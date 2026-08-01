@@ -3306,7 +3306,8 @@ export class DashboardView extends ItemView {
         } else {
             const draftSelect = draftSelectorEl.createEl('select');
             drafts.forEach(draft => {
-                const opt = draftSelect.createEl('option', { value: draft.id, text: draft.name });
+                const label = draft.bookId ? `${draft.name} (book)` : draft.name;
+                const opt = draftSelect.createEl('option', { value: draft.id, text: label });
                 if (activeDraft && draft.id === activeDraft.id) {
                     opt.selected = true;
                 }
@@ -3326,7 +3327,8 @@ export class DashboardView extends ItemView {
             };
             
             // Sync button - discovers new scenes and removes deleted ones
-            const syncBtn = draftSelectorEl.createEl('button', { text: '🔄' });
+            const syncBtn = draftSelectorEl.createEl('button');
+            setIcon(syncBtn, 'refresh-cw');
             syncBtn.title = t('syncScenes');
             syncBtn.onclick = async () => {
                 if (activeDraft) {
@@ -3387,7 +3389,8 @@ export class DashboardView extends ItemView {
             const sceneOrderActions = sceneOrderHeader.createDiv('storyteller-scene-order-actions');
             
             // Reorder by chapter button
-            const reorderBtn = sceneOrderActions.createEl('button', { text: '📚' });
+            const reorderBtn = sceneOrderActions.createEl('button');
+            setIcon(reorderBtn, 'list-ordered');
             reorderBtn.title = t('reorderByChapter');
             reorderBtn.onclick = async () => {
                 await sceneManager.reorderByChapter(activeDraft);
@@ -3405,10 +3408,9 @@ export class DashboardView extends ItemView {
                 // Add auto-populate button if there are scenes available
                 const allScenes = await this.plugin.listScenes();
                 if (allScenes.length > 0) {
-                    const populateBtn = emptyEl.createEl('button', { 
-                        text: `🔄 Add ${allScenes.length} existing scene${allScenes.length > 1 ? 's' : ''}`,
-                        cls: 'mod-cta'
-                    });
+                    const populateBtn = emptyEl.createEl('button', { cls: 'mod-cta' });
+                    setIcon(populateBtn.createSpan(), 'refresh-cw');
+                    populateBtn.createSpan().setText(` Add ${allScenes.length} existing scene${allScenes.length > 1 ? 's' : ''}`);
                     populateBtn.onclick = async () => {
                         await sceneManager.autoPopulateDraft(activeDraft);
                         await this.renderCompileContent(container);
@@ -3465,28 +3467,32 @@ export class DashboardView extends ItemView {
                     // Movement buttons
                     const actionsEl = sceneEl.createDiv('storyteller-ordered-scene-actions');
                     
-                    const upBtn = actionsEl.createEl('button', { text: '↑' });
+                    const upBtn = actionsEl.createEl('button');
+                    setIcon(upBtn, 'arrow-up');
                     upBtn.title = t('moveUp');
                     upBtn.onclick = async () => {
                         await sceneManager.moveSceneUp(activeDraft, sceneId);
                         await this.renderCompileContent(container);
                     };
                     
-                    const downBtn = actionsEl.createEl('button', { text: '↓' });
+                    const downBtn = actionsEl.createEl('button');
+                    setIcon(downBtn, 'arrow-down');
                     downBtn.title = t('moveDown');
                     downBtn.onclick = async () => {
                         await sceneManager.moveSceneDown(activeDraft, sceneId);
                         await this.renderCompileContent(container);
                     };
                     
-                    const indentBtn = actionsEl.createEl('button', { text: '→' });
+                    const indentBtn = actionsEl.createEl('button');
+                    setIcon(indentBtn, 'arrow-right');
                     indentBtn.title = t('indent');
                     indentBtn.onclick = async () => {
                         await sceneManager.indentScene(activeDraft, sceneId);
                         await this.renderCompileContent(container);
                     };
                     
-                    const unindentBtn = actionsEl.createEl('button', { text: '←' });
+                    const unindentBtn = actionsEl.createEl('button');
+                    setIcon(unindentBtn, 'arrow-left');
                     unindentBtn.title = t('unindent');
                     unindentBtn.onclick = async () => {
                         await sceneManager.unindentScene(activeDraft, sceneId);
@@ -4705,7 +4711,7 @@ export class DashboardView extends ItemView {
             const pfpContainer = itemEl.createDiv('storyteller-list-item-pfp');
             if (book.coverImagePath) {
                 const imgEl = pfpContainer.createEl('img');
-                try { imgEl.src = this.getImageSrc(book.coverImagePath); imgEl.alt = book.name; } catch { pfpContainer.createSpan({ text: '📖' }); }
+                try { imgEl.src = this.getImageSrc(book.coverImagePath); imgEl.alt = book.name; } catch { const fb = pfpContainer.createSpan(); setIcon(fb, 'book'); }
             } else {
                 pfpContainer.createDiv({ cls: 'storyteller-pfp-placeholder', text: (book.bookNumber ?? '?').toString() });
             }
@@ -4746,33 +4752,20 @@ export class DashboardView extends ItemView {
             setIcon(compileBtn, 'book-open');
             compileBtn.title = 'Compile this book into a draft';
             compileBtn.addEventListener('click', () => { void (async () => {
-                const sceneRefs: IndentedSceneRef[] = [];
-                for (const ch of bookChapters) {
-                    const chScenes = allScenes
-                        .filter(s => s.chapterId === ch.id)
-                        .sort((a, b) => (a.priority ?? 999) - (b.priority ?? 999));
-                    for (const sc of chScenes) {
-                        sceneRefs.push({ sceneId: sc.id ?? sc.name, indent: 0, includeInCompile: sc.includeInCompile ?? true });
-                    }
-                }
-                if (sceneRefs.length === 0) {
-                    new Notice(`No scenes found for "${book.name}". Add chapters and scenes first.`);
+                const activeStory = this.plugin.settings.stories.find(s => s.id === this.plugin.settings.activeStoryId);
+                if (!activeStory) {
+                    new Notice('Select an active story first.');
                     return;
                 }
-                const now = new Date().toISOString();
-                const draft: StoryDraft = {
-                    id: Date.now().toString(36) + Math.random().toString(36).slice(2, 7),
-                    storyId: this.plugin.settings.activeStoryId ?? 'default',
-                    name: `${book.name} — Draft`,
-                    draftNumber: Date.now(),
-                    sceneOrder: sceneRefs,
-                    created: now,
-                    modified: now,
-                };
-                if (!this.plugin.settings.storyDrafts) this.plugin.settings.storyDrafts = [];
-                this.plugin.settings.storyDrafts.push(draft);
-                await this.plugin.saveSettings();
-                new Notice(`Draft created for "${book.name}" with ${sceneRefs.length} scenes. Switch to the Compile tab.`);
+                const { SceneOrderManager } = await import('../compile');
+                const sceneManager = new SceneOrderManager(this.plugin);
+                const draft = await sceneManager.createOrUpdateDraftFromBook(activeStory, book);
+                if (draft.sceneOrder.length === 0) {
+                    new Notice(`"${book.name}" has no scenes yet. Add chapters and scenes first.`);
+                    return;
+                }
+                new Notice(`"${book.name}" is ready to compile (${draft.sceneOrder.length} scene${draft.sceneOrder.length !== 1 ? 's' : ''}).`);
+                await this.setActiveTab('compile');
             })(); });
 
             this.addEditButton(actionsEl, () => {

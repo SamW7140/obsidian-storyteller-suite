@@ -36,7 +36,7 @@ export class RelationshipEditorModal extends Modal {
             label: undefined
         };
         this.onSubmit = onSubmit;
-        this.modalEl.addClass('storyteller-relationship-editor-modal');
+        this.modalEl.addClass('storyteller-relationship-editor-modal', 'storyteller-modal-scroll');
     }
 
     onOpen() {

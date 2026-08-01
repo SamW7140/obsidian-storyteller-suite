@@ -20,7 +20,7 @@ export class StorytellerGuideModal extends Modal {
     onOpen(): void {
         const { contentEl } = this;
         contentEl.empty();
-        this.modalEl.addClass('storyteller-guide-modal');
+        this.modalEl.addClass('storyteller-guide-modal', 'storyteller-modal-scroll');
 
         const version = this.plugin.manifest.version;
         const guide = this.mode === 'whats-new'
@@ -62,13 +62,6 @@ export class StorytellerGuideModal extends Modal {
                     this.plugin.openWhatsNewGuide();
                 });
         }
-
-        new ButtonComponent(footerEl)
-            .setIcon('heart')
-            .setButtonText('Support on ko-fi')
-            .onClick(() => {
-                window.open('https://ko-fi.com/kingmaws', '_blank');
-            });
 
         new ButtonComponent(footerEl)
             .setButtonText('Close')
