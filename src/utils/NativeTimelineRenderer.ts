@@ -39,6 +39,14 @@ export interface TimelineFilters {
     forkId?: string;
 }
 
+/**
+ * A scene placed on the timeline is adapted into an Event so it can share the
+ * layout and filter paths. Event.location is a single value while a scene can
+ * link several, so the full list rides along here. Renderer-local and never
+ * written back to a note.
+ */
+type TimelineEvent = Event & { _sceneLocations?: string[] };
+
 interface NativeItem {
     id: string;
     event: Event;
@@ -172,7 +180,7 @@ export class NativeTimelineRenderer {
     }
 
     getVisibleEvents(): Event[] {
-        return this.events.filter(event => this.shouldInclude(event)).sort((a, b) => this.eventStart(a) - this.eventStart(b));
+        return this.events.filter(event => this.shouldInclude(event) && this.matchesFork(event)).sort((a, b) => this.eventStart(a) - this.eventStart(b));
     }
 
     searchVisibleEvents(query: string, limit = 12): Event[] {
@@ -246,7 +254,7 @@ export class NativeTimelineRenderer {
     }
 
     getVisibleRange(): { start: Date; end: Date } { return { start: new Date(this.viewStart), end: new Date(this.viewEnd) }; }
-    getEventCount(): number { return this.events.filter(event => this.shouldInclude(event)).length; }
+    getEventCount(): number { return this.events.filter(event => this.shouldInclude(event) && this.matchesFork(event)).length; }
 
     getDateRange(): { start: Date; end: Date } | null {
         const events = this.getVisibleEvents();
@@ -313,15 +321,41 @@ export class NativeTimelineRenderer {
     }
 
     private collectEvents(): Event[] {
-        const result = this.events.filter(event => this.shouldInclude(event)).slice();
+        const result = this.events.filter(event => this.shouldInclude(event) && this.matchesFork(event)).slice();
         if (this.showScenes) {
             this.scenes.forEach(scene => {
-                const date = scene.date;
-                if (date) result.push({ name: scene.name, dateTime: date, description: scene.synopsis || scene.content, filePath: scene.filePath, tags: ['scene'] });
+                if (!scene.date) return;
+                // Build the full event before filtering. Filtering a partial one
+                // would drop every scene the moment a character or location
+                // filter is active, since the relational fields decide the match.
+                const mapped = this.sceneToEvent(scene);
+                if (this.shouldInclude(mapped)) result.push(mapped);
             });
         }
+        // Watched notes are arbitrary vault notes picked up by a frontmatter
+        // property. They carry no characters, locations, or groups, so there is
+        // nothing for the entity filters to match and they always pass.
         if (this.showWatchedNotes) this.watchedNotes.forEach(note => result.push({ name: note.name, dateTime: note.date, filePath: note.filePath, tags: ['watched-note'] }));
         return result.filter(event => Number.isFinite(this.eventStart(event)));
+    }
+
+    private sceneToEvent(scene: Scene): TimelineEvent {
+        const locations = scene.linkedLocations || [];
+        return {
+            name: scene.name,
+            dateTime: scene.date,
+            description: scene.synopsis || scene.content,
+            filePath: scene.filePath,
+            characters: scene.linkedCharacters,
+            groups: scene.linkedGroups,
+            // Keep the scalar populated for lane grouping and anything else
+            // reading Event.location; _sceneLocations carries the rest.
+            location: locations[0],
+            _sceneLocations: locations.length ? locations : undefined,
+            // 'scene' stays first: the show/hide toggle, the styling, and the
+            // double-click guard all key off it.
+            tags: ['scene', ...(scene.tags || [])],
+        };
     }
 
     private buildLanes(events: Event[]): Lane[] {
@@ -1158,6 +1192,13 @@ export class NativeTimelineRenderer {
 
     private openAt(x: number, y: number): void {
         const item = this.hit(x, y); if (!item || item.event.tags?.includes('watched-note')) return;
+        // A scene is not an event. Editing one here would hand EventModal a
+        // synthetic object and saveEvent would write it out as a new event note,
+        // so open the scene itself instead.
+        if (item.event.tags?.includes('scene')) {
+            if (item.event.filePath) void this.app.workspace.openLinkText(item.event.filePath, '', false);
+            return;
+        }
         new EventModal(this.app, this.plugin, item.event, async updated => { await this.plugin.saveEvent(updated); await this.refresh(); }).open();
     }
 
@@ -1170,15 +1211,32 @@ export class NativeTimelineRenderer {
         if (!event.dateTime) return false;
         if (this.filters.milestonesOnly && !event.isMilestone) return false;
         if (this.filters.characters?.size && !event.characters?.some(value => this.filters.characters!.has(value))) return false;
-        if (this.filters.locations?.size && (!event.location || !this.filters.locations.has(event.location))) return false;
+        if (this.filters.locations?.size && !this.eventLocations(event).some(value => this.filters.locations!.has(value))) return false;
         if (this.filters.groups?.size && !event.groups?.some(value => this.filters.groups!.has(value))) return false;
         if (this.filters.tags?.size && !event.tags?.some(value => this.filters.tags!.has(value))) return false;
+        return true;
+    }
+
+    /** Every location an item can be filtered by. Scenes can link more than one. */
+    private eventLocations(event: Event): string[] {
+        const sceneLocations = (event as TimelineEvent)._sceneLocations;
+        if (sceneLocations?.length) return sceneLocations;
+        return event.location ? [event.location] : [];
+    }
+
+    /**
+     * Fork membership, applied to real events only. Scenes and watched notes are
+     * never fork members, so running them through this would empty the timeline
+     * of everything but events as soon as a fork is selected.
+     */
+    private matchesFork(event: Event): boolean {
         const key = this.eventKey(event);
         if (this.filters.forkId && this.filters.forkId !== '__compare__') {
             const fork = this.plugin.getTimelineFork(this.filters.forkId);
-            if (!fork?.forkEvents?.includes(key)) return false;
-        } else if (this.filters.forkId === undefined) {
-            if (this.plugin.getTimelineForks().some(fork => fork.forkEvents?.includes(key))) return false;
+            return Boolean(fork?.forkEvents?.includes(key));
+        }
+        if (this.filters.forkId === undefined) {
+            return !this.plugin.getTimelineForks().some(fork => fork.forkEvents?.includes(key));
         }
         return true;
     }
