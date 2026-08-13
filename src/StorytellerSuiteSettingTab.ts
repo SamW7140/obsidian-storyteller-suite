@@ -638,6 +638,37 @@ export class StorytellerSuiteSettingTab extends PluginSettingTab {
         );
 
         if (this.plugin.settings.enableCustomEntityFolders) {
+            // These paths are global. Without a story placeholder every story writes
+            // into the same folders, so a second story silently lands on top of the
+            // first one's entities. Say so instead of letting it happen quietly.
+            const configuredPaths = [
+                this.plugin.settings.storyRootFolderTemplate,
+                this.plugin.settings.characterFolderPath,
+                this.plugin.settings.locationFolderPath,
+                this.plugin.settings.eventFolderPath,
+                this.plugin.settings.itemFolderPath,
+                this.plugin.settings.referenceFolderPath,
+                this.plugin.settings.chapterFolderPath,
+                this.plugin.settings.sceneFolderPath,
+                this.plugin.settings.mapFolderPath,
+                this.plugin.settings.cultureFolderPath,
+                this.plugin.settings.economyFolderPath,
+                this.plugin.settings.factionFolderPath,
+                this.plugin.settings.magicSystemFolderPath,
+                this.plugin.settings.groupFolderPath,
+                this.plugin.settings.bookFolderPath,
+                this.plugin.settings.sessionsFolderPath,
+            ].filter((p): p is string => Boolean(p && p.trim()));
+            const hasStoryPlaceholder = configuredPaths.some(p => /\{story(Name|Slug|Id)\}/i.test(p));
+            if (configuredPaths.length > 0 && !hasStoryPlaceholder && this.plugin.settings.stories.length > 1) {
+                const shared = container.createDiv({ cls: 'mod-warning sts-shared-folder-warning' });
+                shared.setText(
+                    'These folder paths contain no {storyName}, {storySlug}, or {storyId} placeholder, ' +
+                    'so all ' + this.plugin.settings.stories.length + ' of your stories read and write the same folders. ' +
+                    'Add a placeholder to a path (for example Stories/{storyName}/Characters) to keep each story separate.'
+                );
+            }
+
             new Setting(container)
                 .setName(t('previewResolvedFolders'))
                 .setDesc(t('previewFoldersDesc'))

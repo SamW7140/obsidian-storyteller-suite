@@ -2003,9 +2003,28 @@ export default class StorytellerSuitePlugin extends Plugin {
 			return;
 		}
 
+		// The detected root belongs to whichever story is active right now, but the
+		// folder settings it feeds are global. Writing the literal path would point
+		// every future story at this story's folders. When the root's last segment
+		// is the active story's name (or slug), swap it for the matching placeholder
+		// so the resolver re-derives the path per story instead.
+		const activeStory = this.getActiveStory();
+		const parentSegments = bestParent.split('/');
+		const leafSegment = parentSegments[parentSegments.length - 1];
+		let parentTemplate = bestParent;
+		if (activeStory && leafSegment) {
+			if (leafSegment === activeStory.name) {
+				parentSegments[parentSegments.length - 1] = '{storyName}';
+				parentTemplate = parentSegments.join('/');
+			} else if (leafSegment === this.slugifyFolderName(activeStory.name)) {
+				parentSegments[parentSegments.length - 1] = '{storySlug}';
+				parentTemplate = parentSegments.join('/');
+			}
+		}
+
 		const maybe = (sub: string): string | undefined => {
 			const child = this.app.vault.getFolderByPath(`${bestParent}/${sub}`);
-			return child ? `${bestParent}/${sub}` : undefined;
+			return child ? `${parentTemplate}/${sub}` : undefined;
 		};
 
 		// Populate settings if folders exist
@@ -2022,7 +2041,7 @@ export default class StorytellerSuitePlugin extends Plugin {
 		await this.saveSettings();
 
 		// Provide feedback
-		new Notice(`Storyteller: Auto-detected custom folders under "${bestParent}" (matches: ${bestScore}).`);
+		new Notice(`Storyteller: Auto-detected custom folders under "${parentTemplate}" (matches: ${bestScore}).`);
 	}
 
 	/** Refresh the dashboard view's active tab, if open */
