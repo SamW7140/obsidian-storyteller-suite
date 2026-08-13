@@ -642,10 +642,11 @@ export class StorytellerSuiteSettingTab extends PluginSettingTab {
             const defaults = this.plugin.settings.defaultCustomFields?.[entityType] ?? [];
             const defaultsSetting = new Setting(container)
                 .setName('Default custom fields')
-                .setDesc('One field name per line. Every new ' + MODAL_ENTITY_LABELS[entityType].toLowerCase() +
+                .setDesc('One field name per line, for example intent or parents. Every new ' +
+                    MODAL_ENTITY_LABELS[entityType].toLowerCase() +
                     ' starts with these fields ready to fill in. Existing entities are left alone.')
                 .addTextArea(text => {
-                    text.setPlaceholder('intent\nparents')
+                    text.setPlaceholder('One field name per line')
                         .setValue(defaults.join('\n'))
                         .onChange(async (value) => {
                             const names = value
