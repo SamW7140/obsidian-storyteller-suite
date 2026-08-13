@@ -332,6 +332,10 @@ const FRONTMATTER_LINK_ONLY_SCALAR_FIELDS = new Set([
 
     /** Dashboard tab visibility - array of tab IDs to hide */
     hiddenDashboardTabs?: string[];
+    /** Entity type → ids of edit-modal sections the user switched off */
+    hiddenEntityModalSections?: Record<string, string[]>;
+    /** Entity type → custom field names pre-added to every newly created entity */
+    defaultCustomFields?: Record<string, string[]>;
 
     /** Dashboard tab order - persisted array of tab IDs in user-defined order */
     dashboardTabOrder?: string[];
@@ -492,6 +496,8 @@ const FRONTMATTER_LINK_ONLY_SCALAR_FIELDS = new Set([
     magicSystemFolderPath: '',
     enableSensoryProfiles: true,
     hiddenDashboardTabs: [],
+    hiddenEntityModalSections: {},
+    defaultCustomFields: {},
     templateStorageFolder: 'StorytellerSuite/Templates',
     showBuiltInTemplates: true,
     showCommunityTemplates: false,

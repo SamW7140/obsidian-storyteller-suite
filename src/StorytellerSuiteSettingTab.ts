@@ -23,13 +23,26 @@ import { CalendarRegistry } from './calendar/CalendarRegistry';
 import { encodeShareCode, makeCalendarDocument, makeThemeDocument } from './calendar/TimelineDocuments';
 import { CalendarManagerModal } from './modals/CalendarManagerModal';
 import { PlatformUtils } from './utils/PlatformUtils';
+import {
+    getModalSections,
+    isModalSectionHidden,
+    setModalSectionHidden
+} from './modals/EntityModalSections';
 
-type TabId = 'stories' | 'dashboard' | 'folders' | 'timeline' | 'maps' | 'templates' | 'gallery' | 'help';
+type TabId = 'stories' | 'dashboard' | 'modals' | 'folders' | 'timeline' | 'maps' | 'templates' | 'gallery' | 'help';
 
 // Video walkthrough for the Help tab. Empty shows a coming-soon state.
 const TUTORIAL_VIDEO_URL = 'https://www.youtube.com/watch?v=HL0i6bUpVn0';
 
 interface TabDef { id: TabId; icon: string; label: string; }
+
+/** Entity types whose modals honour the section toggles. */
+const MODAL_CUSTOMIZABLE_ENTITY_TYPES = ['character', 'item'] as const;
+
+const MODAL_ENTITY_LABELS: Record<(typeof MODAL_CUSTOMIZABLE_ENTITY_TYPES)[number], string> = {
+    character: 'Character',
+    item: 'Item',
+};
 
 interface ReopenableView {
     onOpen(): Promise<void> | void;
@@ -62,6 +75,7 @@ export class StorytellerSuiteSettingTab extends PluginSettingTab {
     private readonly TABS: TabDef[] = [
         { id: 'stories',   icon: 'book-open',       label: 'Stories'   },
         { id: 'dashboard', icon: 'layout-dashboard', label: 'Dashboard' },
+        { id: 'modals',    icon: 'sliders-horizontal', label: 'Modals'    },
         { id: 'folders',   icon: 'folder',           label: 'Folders'   },
         { id: 'timeline',  icon: 'clock',            label: 'Timeline'  },
         { id: 'maps',      icon: 'map',              label: 'Maps'      },
@@ -223,6 +237,7 @@ export class StorytellerSuiteSettingTab extends PluginSettingTab {
             switch (tabId) {
                 case 'stories':   this.renderStoriesTab(container);   break;
                 case 'dashboard': this.renderDashboardTab(container); break;
+                case 'modals':    this.renderModalsTab(container);    break;
                 case 'folders':   this.renderFoldersTab(container);   break;
                 case 'timeline':  this.renderTimelineTab(container);  break;
                 case 'maps':      this.renderMapsTab(container);      break;
@@ -585,6 +600,72 @@ export class StorytellerSuiteSettingTab extends PluginSettingTab {
                     })
                 );
         });
+    }
+
+    // ─── Tab: Modals ──────────────────────────────────────────────────────────
+    private renderModalsTab(container: HTMLElement): void {
+        container.createEl('p', {
+            text: 'The entity modals ship with every field the plugin knows about. Switch off the ones your project does not use so the modal only asks for what you actually track.',
+            cls: 'setting-item-description'
+        });
+        container.createEl('p', {
+            text: 'Hiding a section only stops it being drawn. Nothing already saved is deleted, so turning a section back on brings its values with it.',
+            cls: 'setting-item-description'
+        });
+
+        for (const entityType of MODAL_CUSTOMIZABLE_ENTITY_TYPES) {
+            new Setting(container).setName(MODAL_ENTITY_LABELS[entityType]).setHeading();
+
+            for (const section of getModalSections(entityType)) {
+                const isHidden = isModalSectionHidden(
+                    this.plugin.settings.hiddenEntityModalSections,
+                    entityType,
+                    section.id
+                );
+                new Setting(container)
+                    .setName(section.label)
+                    .addToggle(toggle => toggle
+                        .setValue(!isHidden)
+                        .setTooltip(isHidden ? 'Hidden' : 'Shown')
+                        .onChange(async (shown) => {
+                            this.plugin.settings.hiddenEntityModalSections = setModalSectionHidden(
+                                this.plugin.settings.hiddenEntityModalSections,
+                                entityType,
+                                section.id,
+                                !shown
+                            ) as Record<string, string[]>;
+                            await this.plugin.saveSettings();
+                        })
+                    );
+            }
+
+            const defaults = this.plugin.settings.defaultCustomFields?.[entityType] ?? [];
+            const defaultsSetting = new Setting(container)
+                .setName('Default custom fields')
+                .setDesc('One field name per line. Every new ' + MODAL_ENTITY_LABELS[entityType].toLowerCase() +
+                    ' starts with these fields ready to fill in. Existing entities are left alone.')
+                .addTextArea(text => {
+                    text.setPlaceholder('intent\nparents')
+                        .setValue(defaults.join('\n'))
+                        .onChange(async (value) => {
+                            const names = value
+                                .split('\n')
+                                .map(name => name.trim())
+                                .filter((name, i, all) => name.length > 0 && all.indexOf(name) === i);
+                            const map = { ...(this.plugin.settings.defaultCustomFields ?? {}) };
+                            if (names.length > 0) map[entityType] = names;
+                            else delete map[entityType];
+                            this.plugin.settings.defaultCustomFields = map;
+                            await this.plugin.saveSettings();
+                        });
+                    text.inputEl.rows = 4;
+                });
+            this.addInfoToggle(defaultsSetting,
+                'Custom fields are written as ordinary frontmatter properties when "Custom fields mode" is set to flatten, ' +
+                'which is the default. A field named intent becomes an intent: property on the note, editable from ' +
+                'Obsidian\'s own Properties panel and queryable from Bases and Dataview.'
+            );
+        }
     }
 
     // ─── Tab: Folders ─────────────────────────────────────────────────────────

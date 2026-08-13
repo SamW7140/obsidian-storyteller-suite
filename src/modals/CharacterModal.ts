@@ -16,6 +16,7 @@ import { EntityCustomFieldsEditor } from './entity/EntityCustomFieldsEditor';
 import { EntityGroupSelector } from './entity/EntityGroupSelector';
 import { buildEntityNameIndex, getRelationshipTargetRef, resolveEntityRefName } from '../utils/EntityRefUtils';
 import { confirmWithModal } from './ui/ConfirmModal';
+import { isModalSectionHidden, seedDefaultCustomFields } from './EntityModalSections';
 // Placeholder imports for suggesters - these would need to be created
 // import { CharacterSuggestModal } from './CharacterSuggestModal';
 // import { LocationSuggestModal } from './LocationSuggestModal';
@@ -55,6 +56,15 @@ export class CharacterModal extends ResponsiveModal {
             filePath: undefined
         };
         if (!initialCharacter.customFields) initialCharacter.customFields = {};
+        // Recurring fields the user configured are laid out ready to fill in.
+        // Only on creation — seeding an existing character would resurrect a
+        // field they had deliberately removed from it.
+        if (this.isNew) {
+            initialCharacter.customFields = seedDefaultCustomFields(
+                initialCharacter.customFields,
+                plugin.settings.defaultCustomFields?.['character']
+            );
+        }
         if (!initialCharacter.relationships) initialCharacter.relationships = [];
         if (!Array.isArray(initialCharacter.ownedItems)) initialCharacter.ownedItems = [];
         // Preserve filePath if editing
@@ -114,6 +124,15 @@ export class CharacterModal extends ResponsiveModal {
         contentEl.setCssStyles({ overflowY: 'auto' });
         contentEl.setCssStyles({ overflowX: 'hidden' });
         contentEl.createEl('h2', { text: this.isNew ? t('createNewCharacter') : `${t('edit')} ${this.character.name}` });
+
+        // Sections the user switched off in settings are skipped entirely.
+        // Values already saved on the character are left untouched, so turning a
+        // section back on brings its contents back with it.
+        const shows = (sectionId: string): boolean => !isModalSectionHidden(
+            this.plugin.settings.hiddenEntityModalSections,
+            'character',
+            sectionId
+        );
 
         // Auto-apply default template for new characters
         if (this.isNew && !this.character.name) {
@@ -227,6 +246,7 @@ export class CharacterModal extends ResponsiveModal {
             );
 
         // --- Profile Image ---
+        if (shows('profileImage')) {
         const profileImageSetting = new Setting(contentEl)
             .setName(t('profileImage'))
             .setDesc('')
@@ -251,9 +271,10 @@ export class CharacterModal extends ResponsiveModal {
                 descriptionEl: imagePathDesc
             }
         );
+        }
 
         // --- Description ---
-        new Setting(contentEl)
+        if (shows('description')) new Setting(contentEl)
             .setName(t('description'))
             .setClass('storyteller-modal-setting-vertical')
             .addTextArea(text => {
@@ -268,7 +289,7 @@ export class CharacterModal extends ResponsiveModal {
             });
 
         // --- Traits ---
-        new Setting(contentEl)
+        if (shows('traits')) new Setting(contentEl)
             .setName(t('traits'))
             .setDesc(t('traitsPlaceholder'))
             .addText(text => text
@@ -279,7 +300,7 @@ export class CharacterModal extends ResponsiveModal {
                 }));
 
         // --- Backstory ---
-        new Setting(contentEl)
+        if (shows('backstory')) new Setting(contentEl)
             .setName(t('backstory'))
             .setClass('storyteller-modal-setting-vertical')
             .addTextArea(text => {
@@ -294,7 +315,7 @@ export class CharacterModal extends ResponsiveModal {
             });
 
         // --- Status ---
-        new Setting(contentEl)
+        if (shows('status')) new Setting(contentEl)
             .setName(t('status'))
             .setDesc(t('statusPlaceholderCharacter'))
             .addText(text => text
@@ -302,7 +323,7 @@ export class CharacterModal extends ResponsiveModal {
                 .onChange(value => { this.character.status = value || undefined; }));
 
         // --- Affiliation ---
-        new Setting(contentEl)
+        if (shows('affiliation')) new Setting(contentEl)
             .setName(t('affiliation'))
             .setDesc(t('affiliation'))
             .addText(text => text
@@ -310,6 +331,7 @@ export class CharacterModal extends ResponsiveModal {
                 .onChange(value => { this.character.affiliation = value || undefined; }));
 
         // --- Physical Attributes ---
+        if (shows('physicalAttributes')) {
         contentEl.createEl('h3', { text: t('physicalAttributes') });
 
         const attrRow = contentEl.createDiv('storyteller-char-attr-row');
@@ -345,8 +367,9 @@ export class CharacterModal extends ResponsiveModal {
                 .setPlaceholder("E.g., 5'10\", tall")
                 .setValue(this.character.height || '')
                 .onChange(value => { this.character.height = value || undefined; }));
+        }
 
-        new Setting(contentEl)
+        if (shows('quirks')) new Setting(contentEl)
             .setName(t('quirks'))
             .setClass('storyteller-modal-setting-vertical')
             .addTextArea(text => {
@@ -359,6 +382,7 @@ export class CharacterModal extends ResponsiveModal {
             });
 
         // --- Current Location ---
+        if (shows('location')) {
         contentEl.createEl('h3', { text: 'Location' });
         const locationContainer = contentEl.createDiv('storyteller-location-picker-container');
         const locationService = new LocationService(this.plugin);
@@ -412,7 +436,10 @@ export class CharacterModal extends ResponsiveModal {
             }
         }
 
+        }
+
         // --- Cultures ---
+        if (shows('cultures')) {
         contentEl.createEl('h3', { text: 'Cultures' });
         if (!Array.isArray(this.character.cultures)) this.character.cultures = [];
         const cultureChips = contentEl.createDiv('storyteller-linked-chips');
@@ -445,7 +472,10 @@ export class CharacterModal extends ResponsiveModal {
                 });
             });
 
+        }
+
         // --- Finances ---
+        if (shows('finances')) {
         contentEl.createEl('h3', { text: 'Finances' });
         new Setting(contentEl)
             .setName('Balance')
@@ -459,7 +489,10 @@ export class CharacterModal extends ResponsiveModal {
             ledgerEl.createEl('p', { cls: 'storyteller-ledger-note', text: `${this.character.ledger.length} transaction(s) in note` });
         }
 
+        }
+
         // --- Inventory ---
+        if (shows('inventory')) {
         contentEl.createEl('h3', { text: 'Inventory' });
         if (!Array.isArray(this.character.ownedItems)) this.character.ownedItems = [];
         const normalizeInventoryName = (value: string): string => value.trim().toLowerCase();
@@ -521,7 +554,10 @@ export class CharacterModal extends ResponsiveModal {
             text: 'Inventory is stored as character owned items and syncs with item ownership on save.'
         });
 
+        }
+
         // --- Linked Economies ---
+        if (shows('economies')) {
         contentEl.createEl('h3', { text: 'Economies' });
         if (!Array.isArray(this.character.linkedEconomies)) this.character.linkedEconomies = [];
         const charEconChips = contentEl.createDiv('storyteller-linked-chips');
@@ -555,11 +591,16 @@ export class CharacterModal extends ResponsiveModal {
                 });
             });
 
+        }
+
         // --- Groups ---
-        const groupSelectorContainer = contentEl.createDiv('storyteller-group-selector-container');
-        this.groupSelector.attach(groupSelectorContainer);
+        if (shows('groups')) {
+            const groupSelectorContainer = contentEl.createDiv('storyteller-group-selector-container');
+            this.groupSelector.attach(groupSelectorContainer);
+        }
 
         // --- Connections (Typed Relationships) ---
+        if (shows('connections')) {
         contentEl.createEl('h3', { text: t('connections') });
         
         // Initialize connections if not present
@@ -598,12 +639,16 @@ export class CharacterModal extends ResponsiveModal {
                     ).open();
                 }));
 
+        }
+
         // --- Custom Fields ---
-        this.customFieldsEditor.setFields(this.character.customFields);
-        this.customFieldsEditor.renderSection(contentEl);
+        if (shows('customFields')) {
+            this.customFieldsEditor.setFields(this.character.customFields);
+            this.customFieldsEditor.renderSection(contentEl);
+        }
 
         // --- D&D Stats (collapsible) ---
-        this.renderDndStatsSection(contentEl);
+        if (shows('dndStats')) this.renderDndStatsSection(contentEl);
 
         // --- Action Buttons ---
         const footer = rootEl.createDiv('storyteller-modal-footer');

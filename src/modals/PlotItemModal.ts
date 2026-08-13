@@ -24,6 +24,7 @@ import { EntityCustomFieldsEditor } from './entity/EntityCustomFieldsEditor';
 import { EntityGroupSelector } from './entity/EntityGroupSelector';
 import { ResponsiveModal } from './ResponsiveModal';
 import { confirmWithModal } from './ui/ConfirmModal';
+import { isModalSectionHidden, seedDefaultCustomFields } from './EntityModalSections';
 
 export type PlotItemModalSubmitCallback = (item: PlotItem) => Promise<void>;
 export type PlotItemModalDeleteCallback = (item: PlotItem) => Promise<void>;
@@ -59,6 +60,15 @@ export class PlotItemModal extends ResponsiveModal {
         if (!Array.isArray(initialItem.pastOwners)) initialItem.pastOwners = [];
         if (!Array.isArray(initialItem.associatedEvents)) initialItem.associatedEvents = [];
         if (!initialItem.customFields) initialItem.customFields = {};
+        // Recurring fields the user configured are laid out ready to fill in.
+        // Only on creation — seeding an existing item would resurrect a field
+        // they had deliberately removed from it.
+        if (this.isNew) {
+            initialItem.customFields = seedDefaultCustomFields(
+                initialItem.customFields,
+                plugin.settings.defaultCustomFields?.['item']
+            );
+        }
         if (!Array.isArray(initialItem.groups)) initialItem.groups = []; // Ensure groups array is initialized
         if (!Array.isArray(initialItem.magicSystems)) initialItem.magicSystems = [];
         if (!Array.isArray(initialItem.linkedCharacters)) initialItem.linkedCharacters = [];
@@ -102,6 +112,14 @@ export class PlotItemModal extends ResponsiveModal {
         super.onOpen();
         const { contentEl, footerEl } = this.createStructuredModalLayout();
         contentEl.createEl('h2', { text: this.isNew ? t('createItem') : `${t('edit')} ${this.item.name}` });
+
+        // Sections the user switched off in settings are skipped entirely.
+        // Values already saved on the item are left untouched.
+        const shows = (sectionId: string): boolean => !isModalSectionHidden(
+            this.plugin.settings.hiddenEntityModalSections,
+            'item',
+            sectionId
+        );
 
         // Auto-apply default template for new items
         if (this.isNew && !this.item.name) {
@@ -216,6 +234,7 @@ export class PlotItemModal extends ResponsiveModal {
                 .onChange(value => this.item.isPlotCritical = value)
             );
         
+        if (shows('profileImage')) {
         const profileImageSetting = new Setting(contentEl)
             .setName(t('itemImage'))
             .setDesc('')
@@ -240,8 +259,9 @@ export class PlotItemModal extends ResponsiveModal {
                 descriptionEl: imagePathDesc
             }
         );
+        }
 
-        new Setting(contentEl)
+        if (shows('description')) new Setting(contentEl)
             .setName(t('description'))
             .setClass('storyteller-modal-setting-vertical')
             .addTextArea(text => {
@@ -251,7 +271,7 @@ export class PlotItemModal extends ResponsiveModal {
                 text.inputEl.rows = 4;
             });
         
-        new Setting(contentEl)
+        if (shows('history')) new Setting(contentEl)
             .setName(t('history'))
             .setClass('storyteller-modal-setting-vertical')
             .addTextArea(text => {
@@ -261,7 +281,7 @@ export class PlotItemModal extends ResponsiveModal {
                 text.inputEl.rows = 6;
             });
 
-        new Setting(contentEl)
+        if (shows('whereToFind')) new Setting(contentEl)
             .setName(t('whereToFind'))
             .setClass('storyteller-modal-setting-vertical')
             .addTextArea(text => {
@@ -282,6 +302,7 @@ export class PlotItemModal extends ResponsiveModal {
         }
 
         // --- Current owners ---
+        if (shows('owners')) {
         contentEl.createEl('h3', { text: t('currentOwners') });
         contentEl.createEl('p', {
             cls: 'storyteller-modal-hint',
@@ -328,9 +349,10 @@ export class PlotItemModal extends ResponsiveModal {
                 );
         };
         renderOwners();
+        }
 
         // --- Creator ---
-        new Setting(contentEl)
+        if (shows('creator')) new Setting(contentEl)
             .setName(t('creator'))
             .setDesc(this.item.creator ? `${t('creator')}: ${this.item.creator}` : t('creatorDesc'))
             .addButton(btn => btn
@@ -353,7 +375,7 @@ export class PlotItemModal extends ResponsiveModal {
             );
 
         // --- Quantity ---
-        new Setting(contentEl)
+        if (shows('quantity')) new Setting(contentEl)
             .setName(t('quantity'))
             .setDesc(t('quantityDesc'))
             .addText(text => {
@@ -374,15 +396,19 @@ export class PlotItemModal extends ResponsiveModal {
                     });
             });
         // --- Groups ---
-        contentEl.createEl('h3', { text: t('groups') });
-        const groupSelectorContainer = contentEl.createDiv('storyteller-group-selector-container');
-        this.groupSelector.attach(groupSelectorContainer);
+        if (shows('groups')) {
+            contentEl.createEl('h3', { text: t('groups') });
+            const groupSelectorContainer = contentEl.createDiv('storyteller-group-selector-container');
+            this.groupSelector.attach(groupSelectorContainer);
+        }
 
 
         // --- Custom Fields ---
-        this.customFieldsEditor.setFields(this.item.customFields);
-        this.customFieldsEditor.renderSection(contentEl);
-        new Setting(contentEl)
+        if (shows('customFields')) {
+            this.customFieldsEditor.setFields(this.item.customFields);
+            this.customFieldsEditor.renderSection(contentEl);
+        }
+        if (shows('location')) new Setting(contentEl)
             .setName(t('currentLocation'))
             .setDesc(`${t('currentLocation')}: ${this.item.currentLocation || t('none')}`)
             .addButton(btn => btn
@@ -405,6 +431,7 @@ export class PlotItemModal extends ResponsiveModal {
             
 
         // --- Past Owners ---
+        if (shows('pastOwners')) {
         contentEl.createEl('h3', { text: t('pastOwners') });
         const pastOwnersContainer = contentEl.createDiv('storyteller-past-owners-container');
         const renderPastOwners = () => {
@@ -436,8 +463,10 @@ export class PlotItemModal extends ResponsiveModal {
                 );
         };
         renderPastOwners();
+        }
 
         // --- Associated Events ---
+        if (shows('associatedEvents')) {
         contentEl.createEl('h3', { text: t('associatedEvents') });
         const assocEventsContainer = contentEl.createDiv('storyteller-assoc-events-container');
         const renderAssocEvents = () => {
@@ -469,8 +498,10 @@ export class PlotItemModal extends ResponsiveModal {
                 );
         };
         renderAssocEvents();
+        }
 
         // --- Associated Characters (multiple owners/associations) ---
+        if (shows('associatedCharacters')) {
         contentEl.createEl('h3', { text: 'Associated characters' });
         contentEl.createEl('p', {
             cls: 'storyteller-modal-hint',
@@ -507,6 +538,8 @@ export class PlotItemModal extends ResponsiveModal {
                     dd.setValue('');
                 });
             });
+
+        }
 
         // --- Magic Systems ---
         contentEl.createEl('h3', { text: 'Magic systems' });
@@ -641,6 +674,7 @@ export class PlotItemModal extends ResponsiveModal {
             });
 
         // --- Campaign Use ---
+        if (shows('campaignUse')) {
         const campaignHdr = contentEl.createDiv('storyteller-campaign-use-header');
         campaignHdr.createEl('h3', { text: 'Campaign use' });
         const campaignToggle = campaignHdr.createEl('button', { cls: 'storyteller-campaign-use-toggle' });
@@ -773,6 +807,7 @@ export class PlotItemModal extends ResponsiveModal {
             groups: allGroupsForEffects,
             compendiumEntries: allCompendiumEntries,
         });
+        }
 
         // --- Action Buttons at bottom ---
         if (!this.isNew && this.onDelete) {
