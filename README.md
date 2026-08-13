@@ -165,6 +165,12 @@ You can also work in One Story Mode or point entity types at custom folders from
 
 Note: in One Story Mode, the dashboard intentionally hides the `New story` button because the vault is operating as a single-story setup.
 
+## Templates
+
+Templates can be built in the UI or written as plain markdown notes dropped into
+`StorytellerSuite/Templates/Notes`. See `TEMPLATES_GUIDE.md` for the note format,
+the frontmatter keys, and the bulk variable importer.
+
 ## Translations
 
 Storyteller Suite currently ships with:
