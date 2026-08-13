@@ -113,6 +113,7 @@ export const BODY_SECTION_FIELD_MAP: Record<EntityType, Record<string, string>> 
     'History / Lore': 'history', // legacy fallback
     'Cultural Significance': 'culturalSignificance',
     'Magic Properties': 'magicProperties',
+    'Where to Find': 'whereToFind',
   },
   reference: {
     Content: 'content',

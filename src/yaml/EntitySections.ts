@@ -32,6 +32,10 @@ export const WIKI_LINK_ARRAY_FIELDS = new Set([
     'setupScenes',
     'payoffScenes',
     'groups',
+    // Matches pastOwners, the other character-name array on an item. ownedItems
+    // and createdItems stay plain names — ownedItems always has, and wiki-linking
+    // it now would rewrite every existing character note on its next save.
+    'owners',
     'pastOwners',
     'dependencies',
     'territories',
@@ -57,6 +61,7 @@ export const WIKI_LINK_SCALAR_FIELDS = new Set([
     'campaignBoardMapId',
     'location',
     'currentOwner',
+    'creator',
     'currentLocation',
     'povCharacter',
     'navigatesToScene',
@@ -124,7 +129,7 @@ export function isStampedEntityTypeCompatible(
 const FRONTMATTER_WHITELISTS: Record<EntityType, Set<string>> = {
   character: new Set([
     'id', 'entityType', 'name', 'traits', 'relationships', 'locations', 'events',
-    'currentLocationId', 'locationHistory', 'ownedItems', 'cultures', 'magicSystems',
+    'currentLocationId', 'locationHistory', 'ownedItems', 'createdItems', 'cultures', 'magicSystems',
     'status', 'affiliation', 'gender', 'race', 'age', 'occupation', 'birthDate', 'birthday', 'height', 'quirks',
     'groups', 'profileImagePath', 'customFields', 'connections',
     'balance', 'linkedEconomies', 'linkedChapters', 'linkedScenes', 'linkedItems', 'compendiumEntries',
@@ -150,7 +155,10 @@ const FRONTMATTER_WHITELISTS: Record<EntityType, Set<string>> = {
     'mapCoordinates', 'mapId', 'markerId', 'relatedMapIds', 'mapIcon', 'mapColor'
   ]),
   item: new Set([
-    'id', 'entityType', 'name', 'isPlotCritical', 'currentOwner', 'pastOwners',
+    // currentOwner is deliberately absent — it is the legacy scalar that owners
+    // replaced, hoisted on read and omitted on write.
+    'id', 'entityType', 'name', 'isPlotCritical', 'owners', 'pastOwners',
+    'creator', 'quantity',
     'currentLocation', 'associatedEvents', 'magicSystems', 'groups', 'profileImagePath', 'customFields', 'connections',
     'linkedCharacters', 'linkedEconomies', 'linkedCultures', 'economicValue',
     'linkedChapters', 'linkedScenes', 'compendiumSources',

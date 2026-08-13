@@ -6,7 +6,7 @@ import { PlotItem } from '../types';
 import StorytellerSuitePlugin from '../main';
 import { PlotItemModal } from './PlotItemModal';
 import { confirmWithModal } from './ui/ConfirmModal';
-import { toStringArray } from '../utils/EntityRefUtils';
+import { getOwners } from '../utils/ItemOwnership';
 
 export class PlotItemListModal extends Modal {
     plugin: StorytellerSuitePlugin;
@@ -65,7 +65,7 @@ export class PlotItemListModal extends Modal {
         const filteredItems = this.items.filter(item =>
             item.name.toLowerCase().includes(filter) ||
             (item.description || '').toLowerCase().includes(filter) ||
-            toStringArray(item.currentOwner).some(owner => owner.toLowerCase().includes(filter))
+            getOwners(item).some(owner => owner.toLowerCase().includes(filter))
         );
 
         if (filteredItems.length === 0) {
@@ -92,7 +92,7 @@ export class PlotItemListModal extends Modal {
                 infoEl.createEl('p', { text: displayText });
             }
 
-            const ownerNames = toStringArray(item.currentOwner);
+            const ownerNames = getOwners(item);
             if (ownerNames.length > 0) {
                 infoEl.createEl('p', { text: t('ownerValue', ownerNames.join(', ')) });
             }

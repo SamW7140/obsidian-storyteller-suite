@@ -3,12 +3,13 @@ import { Character, TypedRelationship } from '../types';
 import StorytellerSuitePlugin from '../main';
 import { BUILT_IN_SHEET_TEMPLATES, CustomSheetTemplate } from './CharacterSheetTemplates';
 import { getRelationshipTargetRef, firstString, toStringArray, resolveEntityRefName } from './EntityRefUtils';
+import { getOwners } from './ItemOwnership';
 
 export interface SheetData {
     character: Character;
     events: { dateTime?: string; name: string; status?: string }[];
     locations: { name: string; description?: string }[];
-    items: { name: string; currentOwner?: string; pastOwners?: string[]; isPlotCritical?: boolean }[];
+    items: { name: string; owners: string[]; pastOwners?: string[]; isPlotCritical?: boolean }[];
     groups: { name: string; description?: string }[];
     portraitDataUrl?: string;
 }
@@ -52,10 +53,10 @@ export class CharacterSheetGenerator {
             toStringArray(character.locations).some(loc => loc.toLowerCase() === String(l.name ?? '').toLowerCase())
         );
         const items = allItems
-            .filter(i => ownsName(i.currentOwner) || ownsName(i.pastOwners))
+            .filter(i => ownsName(getOwners(i)) || ownsName(i.pastOwners))
             .map(i => ({
                 name: i.name,
-                currentOwner: firstString(i.currentOwner),
+                owners: getOwners(i),
                 pastOwners: toStringArray(i.pastOwners),
                 isPlotCritical: !!i.isPlotCritical,
             }));
@@ -229,7 +230,7 @@ ${inner}
 
         const itemsHtml = items.length > 0
             ? `<ul>${items.map(item => {
-                const own  = item.currentOwner?.toLowerCase() === character.name.toLowerCase() ? '(current)' : '(former)';
+                const own  = item.owners.some(owner => owner.toLowerCase() === character.name.toLowerCase()) ? '(current)' : '(former)';
                 const crit = item.isPlotCritical ? ' — <em>Plot Critical</em>' : '';
                 return `<li><strong>${esc(item.name)}</strong> ${own}${crit}</li>`;
               }).join('')}</ul>`
@@ -418,7 +419,7 @@ ${inner}
             lines.push('## Items');
             lines.push('');
             charItems.forEach(item => {
-                const ownership = item.currentOwner?.toLowerCase() === character.name.toLowerCase() ? '(current)' : '(former)';
+                const ownership = item.owners.some(owner => owner.toLowerCase() === character.name.toLowerCase()) ? '(current)' : '(former)';
                 const critical  = item.isPlotCritical ? ' — *Plot Critical*' : '';
                 lines.push(`- [[${item.name}]] ${ownership}${critical}`);
             });

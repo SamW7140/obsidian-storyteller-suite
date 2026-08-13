@@ -138,16 +138,27 @@ export class EntitySyncService {
                 return character.name || character.id || '';
             }
         },
-        // Item ↔ Character (currentOwner ↔ ownedItems[])
+        // Item ↔ Character (owners[] ↔ ownedItems[])
         {
             sourceType: 'item',
-            sourceField: 'currentOwner',
+            sourceField: 'owners',
             targetType: 'character',
             targetField: 'ownedItems',
             bidirectional: true,
             isArray: true,
-            sourceIsArray: false,
             transform: (ownerName: string, item: PlotItem) => item.name,
+            reverseTransform: (itemId: string, character: Character) => character.name
+        },
+        // Item ↔ Character (creator ↔ createdItems[])
+        {
+            sourceType: 'item',
+            sourceField: 'creator',
+            targetType: 'character',
+            targetField: 'createdItems',
+            bidirectional: true,
+            isArray: true,
+            sourceIsArray: false,
+            transform: (creatorName: string, item: PlotItem) => item.name,
             reverseTransform: (itemId: string, character: Character) => character.name
         },
         // Event ↔ Item (items[] ↔ associatedEvents[])

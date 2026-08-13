@@ -52,6 +52,7 @@ import {
     applyBranchOutcomes,
 } from '../utils/DiceRoller';
 import { renderEncounterWidget } from '../extensions/BranchBlockExtension';
+import { getOwners, getPartyOwner, setPartyOwner } from '../utils/ItemOwnership';
 
 export const VIEW_TYPE_CAMPAIGN = 'storyteller-campaign-view';
 
@@ -1465,8 +1466,13 @@ export class CampaignView extends ItemView {
                     ownerSelect.createEl('option', { value: partyName, text: partyName });
                 }
 
+                const partyNameSet = new Set(
+                    (session.partyCharacterNames ?? []).map(name => this.normalizeName(name))
+                );
                 const plotItem = getPlotItem(item);
-                ownerSelect.value = plotItem?.currentOwner ?? '';
+                ownerSelect.value = plotItem
+                    ? getPartyOwner(plotItem, partyNameSet, this.normalizeName) ?? ''
+                    : '';
                 if (!plotItem) {
                     ownerSelect.disabled = true;
                     ownerSelect.title = 'Create a matching plot item to track ownership.';
@@ -1475,8 +1481,8 @@ export class CampaignView extends ItemView {
                     const entry = getPlotItem(item);
                     if (!entry) return;
                     const nextOwner = ownerSelect.value.trim() || undefined;
-                    if ((entry.currentOwner ?? '') === (nextOwner ?? '')) return;
-                    entry.currentOwner = nextOwner;
+                    // Owners outside this party keep their copy either way.
+                    if (!setPartyOwner(entry, nextOwner, partyNameSet, this.normalizeName)) return;
                     await this.plugin.savePlotItem(entry);
                     await this.autosave(
                         nextOwner
@@ -1899,7 +1905,10 @@ export class CampaignView extends ItemView {
                 return resolved ? [resolved] : [];
             }
             case 'itemOwner': {
-                const owner = inParty(plotItem.currentOwner) ?? inParty(this.activeActorName) ?? partyNames[0];
+                const owned = getOwners(plotItem)
+                    .map(name => inParty(name))
+                    .find((name): name is string => Boolean(name));
+                const owner = owned ?? inParty(this.activeActorName) ?? partyNames[0];
                 return owner ? [owner] : [];
             }
             case 'activeActor':
@@ -2319,13 +2328,10 @@ export class CampaignView extends ItemView {
             const plotItem = findItem(itemName);
             if (!plotItem) continue;
 
-            const currentOwner = plotItem.currentOwner ? this.normalizeName(plotItem.currentOwner) : '';
-            if (currentOwner && partyNameSet.has(currentOwner)) continue;
+            // Already held by someone in the party — leave that assignment alone.
+            if (getPartyOwner(plotItem, partyNameSet, this.normalizeName)) continue;
+            if (!setPartyOwner(plotItem, defaultOwner, partyNameSet, this.normalizeName)) continue;
 
-            const nextOwner = defaultOwner;
-            if ((plotItem.currentOwner ?? '') === (nextOwner ?? '')) continue;
-
-            plotItem.currentOwner = nextOwner;
             await this.plugin.savePlotItem(plotItem);
         }
 
@@ -2337,10 +2343,11 @@ export class CampaignView extends ItemView {
         for (const itemName of uniquePreviousItems) {
             if (currentNameSet.has(this.normalizeName(itemName))) continue;
             const plotItem = findItem(itemName);
-            if (!plotItem || !plotItem.currentOwner) continue;
-            if (!partyNameSet.has(this.normalizeName(plotItem.currentOwner))) continue;
+            if (!plotItem) continue;
+            // The party dropped it; owners outside the party still hold theirs.
+            if (!getPartyOwner(plotItem, partyNameSet, this.normalizeName)) continue;
+            if (!setPartyOwner(plotItem, undefined, partyNameSet, this.normalizeName)) continue;
 
-            plotItem.currentOwner = undefined;
             await this.plugin.savePlotItem(plotItem);
         }
     }

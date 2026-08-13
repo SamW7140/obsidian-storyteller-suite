@@ -1,6 +1,6 @@
 import { Notice, Setting } from 'obsidian';
 import { PlotItemModal } from '../../../modals/PlotItemModal';
-import { toStringArray } from '../../../utils/EntityRefUtils';
+import { getOwners } from '../../../utils/ItemOwnership';
 import { t } from '../../../i18n/strings';
 import type { PlotItem } from '../../../types';
 import type { DashboardControllerContext, DashboardTabController } from './types';
@@ -103,7 +103,7 @@ async function renderItemsList(container: HTMLElement, context: DashboardControl
         if (item.description) infoEl.createEl('p', { text: item.description.substring(0, 80) + '...' });
 
         const extraInfoEl = infoEl.createDiv('storyteller-list-item-extra');
-        const ownerNames = toStringArray(item.currentOwner);
+        const ownerNames = getOwners(item);
         if (ownerNames.length > 0) extraInfoEl.createSpan({ text: `Owner: ${ownerNames.join(', ')}` });
         if (item.currentLocation) {
             if (ownerNames.length > 0) extraInfoEl.appendText(' • ');
@@ -118,7 +118,7 @@ async function renderItemsList(container: HTMLElement, context: DashboardControl
             const parts: string[] = [];
             if (item.magicSystems?.length) parts.push(`${item.magicSystems.length} magic`);
             if (item.linkedCultures?.length) parts.push(`${item.linkedCultures.length} culture${item.linkedCultures.length > 1 ? 's' : ''}`);
-            if (item.currentOwner || item.currentLocation || item.economicValue) extraInfoEl.appendText(' • ');
+            if (ownerNames.length > 0 || item.currentLocation || item.economicValue) extraInfoEl.appendText(' • ');
             extraInfoEl.createSpan({ cls: 'storyteller-item-tags', text: parts.join(' · ') });
         }
 

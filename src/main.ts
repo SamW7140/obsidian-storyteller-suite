@@ -187,7 +187,10 @@ const FRONTMATTER_OBJECT_REFERENCE_FIELDS: FrontmatterObjectReferenceFieldConfig
 
 const FRONTMATTER_LINK_ONLY_SCALAR_FIELDS = new Set([
     'location',
+    // currentOwner stays listed so a legacy note's scalar is unwrapped before
+    // parseFile hoists it into owners.
     'currentOwner',
+    'creator',
     'currentLocation',
     'povCharacter',
     'navigatesToScene',
@@ -3995,6 +3998,15 @@ export default class StorytellerSuitePlugin extends Plugin {
                 data[fieldName] = allSections[sectionName];
             }
 
+            // An item written before owners existed carries a single currentOwner.
+            // Hoist it so the rest of the plugin only ever sees the plural form.
+            // The legacy key is left on the note until the next save rewrites it,
+            // so a read alone never mutates anything.
+            if (entityType === 'item' && data['owners'] === undefined) {
+                const legacyOwner = this.stripWikiLinkValue(data['currentOwner']);
+                if (legacyOwner) data['owners'] = [legacyOwner];
+            }
+
             // Connections are stored as readable strings ("type: [[Target]] — label")
             // so the Properties panel renders them; convert back to typed objects.
             // Legacy object-form entries pass through unchanged.
@@ -4153,15 +4165,19 @@ export default class StorytellerSuitePlugin extends Plugin {
     private async buildLinkedFrontmatter(
         entityType: 'character' | 'location' | 'event' | 'item' | 'culture' | 'economy' | 'magicSystem' | 'compendiumEntry' | 'book' | 'map',
         src: Record<string, unknown>,
-        originalFrontmatter?: Record<string, unknown>
+        originalFrontmatter?: Record<string, unknown>,
+        extraOmitKeys?: readonly string[]
     ): Promise<Record<string, unknown>> {
         const preserve = new Set<string>(Object.keys(src || {}));
         const mode = this.settings.customFieldsMode ?? 'flatten';
         const prepared = await this.serializeFrontmatterEntityReferences(src);
+        const omitOriginalKeys = extraOmitKeys?.length
+            ? [...prepared.omitOriginalKeys, ...extraOmitKeys]
+            : prepared.omitOriginalKeys;
         return buildFrontmatter(entityType, prepared.source, preserve, {
             customFieldsMode: mode,
             originalFrontmatter,
-            omitOriginalKeys: prepared.omitOriginalKeys,
+            omitOriginalKeys,
         });
     }
 
@@ -4178,7 +4194,11 @@ export default class StorytellerSuitePlugin extends Plugin {
     }
 
     private buildFrontmatterForItem(src: Record<string, unknown>, originalFrontmatter?: Record<string, unknown>): Promise<Record<string, unknown>> {
-        return this.buildLinkedFrontmatter('item', src, originalFrontmatter);
+        // parseFile has already hoisted any legacy currentOwner into owners, so
+        // dropping it here completes the migration. Without the omit, the
+        // original-frontmatter preservation pass would put the stale scalar back
+        // on every save and the note would carry two competing owner fields.
+        return this.buildLinkedFrontmatter('item', src, originalFrontmatter, ['currentOwner']);
     }
 
     private buildFrontmatterForCulture(src: Record<string, unknown>, originalFrontmatter?: Record<string, unknown>): Promise<Record<string, unknown>> {
@@ -5650,12 +5670,17 @@ export default class StorytellerSuitePlugin extends Plugin {
         const history = itemRecord.history as string | undefined;
         const culturalSignificance = itemRecord.culturalSignificance as string | undefined;
         const magicProperties = itemRecord.magicProperties as string | undefined;
+        const whereToFind = itemRecord.whereToFind as string | undefined;
         const rest: Record<string, unknown> = { ...itemRecord };
         delete rest.filePath;
         delete rest.description;
         delete rest.history;
         delete rest.culturalSignificance;
         delete rest.magicProperties;
+        delete rest.whereToFind;
+        // owners supersedes it; carrying both would let the stale scalar win the
+        // next time an older build read the note.
+        delete rest.currentOwner;
         if (rest.sections) delete rest.sections;
 
 		let finalFilePath = filePath;
@@ -5722,6 +5747,7 @@ export default class StorytellerSuitePlugin extends Plugin {
 			History: history || '',
 			'Cultural Significance': culturalSignificance || '',
 			'Magic Properties': magicProperties || '',
+			'Where to Find': whereToFind || '',
 		};
 		const templateSections = getTemplateSections('item', providedSections);
 		const allSections: Record<string, string> = (existingFile && existingFile instanceof TFile)

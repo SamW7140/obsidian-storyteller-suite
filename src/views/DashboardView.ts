@@ -17,7 +17,7 @@ import { Character, Location, Event, PlotItem, GalleryImage, IndentedSceneRef, S
 import { NewStoryModal } from '../modals/NewStoryModal';
 import { GroupModal } from '../modals/GroupModal';
 import { PlatformUtils } from '../utils/PlatformUtils';
-import { toStringArray } from '../utils/EntityRefUtils';
+import { getOwners } from '../utils/ItemOwnership';
 import type { DashboardLayoutMode } from '../utils/PlatformUtils';
 import {
     Template,
@@ -1380,7 +1380,7 @@ export class DashboardView extends ItemView {
             }
 
             const extraInfoEl = infoEl.createDiv('storyteller-list-item-extra');
-            const ownerNames = toStringArray(item.currentOwner);
+            const ownerNames = getOwners(item);
             if (ownerNames.length > 0) {
                 extraInfoEl.createSpan({ text: `Owner: ${ownerNames.join(', ')}` });
             }
@@ -1391,7 +1391,7 @@ export class DashboardView extends ItemView {
                 extraInfoEl.createSpan({ text: `Location: ${locationName}` });
             }
             if (item.economicValue) {
-                if (item.currentOwner || item.currentLocation) extraInfoEl.appendText(' • ');
+                if (ownerNames.length > 0 || item.currentLocation) extraInfoEl.appendText(' • ');
                 extraInfoEl.createSpan({ cls: 'storyteller-item-value-badge', text: item.economicValue });
             }
             const tagCount = (item.magicSystems?.length ?? 0) + (item.linkedCultures?.length ?? 0);
@@ -1399,7 +1399,7 @@ export class DashboardView extends ItemView {
                 const parts: string[] = [];
                 if (item.magicSystems?.length) parts.push(`${item.magicSystems.length} magic`);
                 if (item.linkedCultures?.length) parts.push(`${item.linkedCultures.length} culture${item.linkedCultures.length > 1 ? 's' : ''}`);
-                if (item.currentOwner || item.currentLocation || item.economicValue) extraInfoEl.appendText(' • ');
+                if (ownerNames.length > 0 || item.currentLocation || item.economicValue) extraInfoEl.appendText(' • ');
                 extraInfoEl.createSpan({ cls: 'storyteller-item-tags', text: parts.join(' · ') });
             }
 

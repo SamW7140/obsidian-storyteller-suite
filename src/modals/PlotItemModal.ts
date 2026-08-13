@@ -260,34 +260,119 @@ export class PlotItemModal extends ResponsiveModal {
                     .onChange(value => this.item.history = value || undefined);
                 text.inputEl.rows = 6;
             });
-        
+
+        new Setting(contentEl)
+            .setName(t('whereToFind'))
+            .setClass('storyteller-modal-setting-vertical')
+            .addTextArea(text => {
+                text.setPlaceholder('Where copies of this item can be found, bought, or made')
+                    .setValue(this.item.whereToFind || '')
+                    .onChange(value => this.item.whereToFind = value || undefined);
+                text.inputEl.rows = 4;
+            });
+
         contentEl.createEl('h3', { text: t('relationships') });
-        if (this.item.currentOwner && this.item.currentLocation) {
+        if (!Array.isArray(this.item.owners)) this.item.owners = [];
+        if (this.item.owners.length > 0 && this.item.currentLocation) {
             contentEl.createEl('p', {
                 cls: 'storyteller-modal-hint storyteller-item-owner-location-warning',
-                text: `This item has both an owner (${this.item.currentOwner}) and a location (${this.item.currentLocation}).`,
+                text: `This item has ${this.item.owners.length === 1 ? 'an owner' : 'owners'} ` +
+                    `(${this.item.owners.join(', ')}) and a location (${this.item.currentLocation}).`,
             });
         }
 
+        // --- Current owners ---
+        contentEl.createEl('h3', { text: t('currentOwners') });
+        contentEl.createEl('p', {
+            cls: 'storyteller-modal-hint',
+            text: 'An item that exists in more than one copy can be held by several characters at once.'
+        });
+        const ownersContainer = contentEl.createDiv('storyteller-current-owners-container');
+        const renderOwners = () => {
+            ownersContainer.empty();
+            if (this.item.owners && this.item.owners.length > 0) {
+                const listDiv = ownersContainer.createDiv('storyteller-tags-list');
+                this.item.owners.forEach((owner, idx) => {
+                    const tag = listDiv.createSpan({ text: owner, cls: 'storyteller-tag' });
+                    const removeBtn = tag.createSpan({ text: ' ×', cls: 'remove-tag-btn' });
+                    removeBtn.onclick = () => {
+                        this.item.owners!.splice(idx, 1);
+                        renderOwners();
+                    };
+                });
+            } else {
+                ownersContainer.createEl('p', { text: t('none'), cls: 'storyteller-modal-hint' });
+            }
+            new Setting(ownersContainer)
+                .addButton(btn => btn
+                    .setButtonText(t('addOwner'))
+                    .setIcon('user-plus')
+                    .onClick(() => {
+                        new CharacterSuggestModal(this.app, this.plugin, (char) => {
+                            if (!Array.isArray(this.item.owners)) this.item.owners = [];
+                            if (this.item.owners.includes(char.name)) {
+                                new Notice(`${char.name} already owns this item.`);
+                                return;
+                            }
+                            if (this.item.currentLocation && this.item.owners.length === 0) {
+                                new Notice(
+                                    `${this.item.name || 'This item'} is currently at ${this.item.currentLocation}. ` +
+                                    `Assigning an owner may conflict with location tracking.`,
+                                    7000
+                                );
+                            }
+                            this.item.owners.push(char.name);
+                            renderOwners();
+                        }).open();
+                    })
+                );
+        };
+        renderOwners();
+
+        // --- Creator ---
         new Setting(contentEl)
-            .setName(t('currentOwner'))
-            .setDesc(`${t('currentOwner')}: ${this.item.currentOwner || t('none')}`)
+            .setName(t('creator'))
+            .setDesc(this.item.creator ? `${t('creator')}: ${this.item.creator}` : t('creatorDesc'))
             .addButton(btn => btn
-                .setButtonText(t('selectOwner'))
+                .setButtonText(t('selectCreator'))
+                .setIcon('hammer')
                 .onClick(() => {
                     new CharacterSuggestModal(this.app, this.plugin, (char) => {
-                        if (this.item.currentLocation) {
-                            new Notice(
-                                `${this.item.name || 'This item'} is currently at ${this.item.currentLocation}. ` +
-                                `Assigning an owner may conflict with location tracking.`,
-                                7000
-                            );
-                        }
-                        this.item.currentOwner = char.name;
-                        void this.onOpen(); // Re-render to update the description
+                        this.item.creator = char.name;
+                        void this.onOpen();
                     }).open();
                 })
+            )
+            .addExtraButton(btn => btn
+                .setIcon('cross')
+                .setTooltip(t('clearCreator'))
+                .onClick(() => {
+                    this.item.creator = undefined;
+                    void this.onOpen();
+                })
             );
+
+        // --- Quantity ---
+        new Setting(contentEl)
+            .setName(t('quantity'))
+            .setDesc(t('quantityDesc'))
+            .addText(text => {
+                text.inputEl.type = 'number';
+                text.inputEl.min = '1';
+                text.setPlaceholder('1')
+                    .setValue(this.item.quantity !== undefined ? String(this.item.quantity) : '')
+                    .onChange(value => {
+                        const trimmed = value.trim();
+                        if (trimmed === '') {
+                            this.item.quantity = undefined;
+                            return;
+                        }
+                        const parsed = Number(trimmed);
+                        this.item.quantity = Number.isFinite(parsed) && parsed > 0
+                            ? Math.floor(parsed)
+                            : undefined;
+                    });
+            });
         // --- Groups ---
         contentEl.createEl('h3', { text: t('groups') });
         const groupSelectorContainer = contentEl.createDiv('storyteller-group-selector-container');
@@ -304,9 +389,10 @@ export class PlotItemModal extends ResponsiveModal {
                 .setButtonText(t('selectLocation'))
                 .onClick(() => {
                     new LocationSuggestModal(this.app, this.plugin, (loc) => {
-                        if (this.item.currentOwner && loc) {
+                        const owners = this.item.owners ?? [];
+                        if (owners.length > 0 && loc) {
                             new Notice(
-                                `${this.item.name || 'This item'} is currently owned by ${this.item.currentOwner}. ` +
+                                `${this.item.name || 'This item'} is currently owned by ${owners.join(', ')}. ` +
                                 `Assigning a location may conflict with ownership tracking.`,
                                 7000
                             );
@@ -1146,6 +1232,9 @@ export class PlotItemModal extends ResponsiveModal {
                 if ('Magic Properties' in parsedSections) {
                     fields.magicProperties = parsedSections['Magic Properties'];
                 }
+                if ('Where to Find' in parsedSections) {
+                    fields.whereToFind = parsedSections['Where to Find'];
+                }
 
                 
             } catch {
@@ -1174,7 +1263,8 @@ export class PlotItemModal extends ResponsiveModal {
         
 
         // Clear relationships as they reference template entities
-        this.item.currentOwner = undefined;
+        this.item.owners = [];
+        this.item.creator = undefined;
         this.item.pastOwners = [];
         this.item.currentLocation = undefined;
         this.item.associatedEvents = [];

@@ -42,7 +42,7 @@ function createMockPlugin(db: MockDb): StorytellerSuitePlugin {
     } as unknown as StorytellerSuitePlugin;
 }
 
-describe('EntitySyncService — item owner ↔ character inventory', () => {
+describe('EntitySyncService — item owners ↔ character inventory', () => {
     let db: MockDb;
     let service: EntitySyncService;
 
@@ -59,85 +59,128 @@ describe('EntitySyncService — item owner ↔ character inventory', () => {
         service = new EntitySyncService(createMockPlugin(db));
     });
 
-    it('adds the item to the new owner ownedItems', async () => {
-        const oldItem = { id: 'item-lens', name: 'The Tide Lens', currentOwner: undefined } as unknown as PlotItem;
-        const newItem = { id: 'item-lens', name: 'The Tide Lens', currentOwner: 'Mira Vey' } as unknown as PlotItem;
+    const lens = (owners?: string[]): PlotItem =>
+        ({ id: 'item-lens', name: 'The Tide Lens', isPlotCritical: false, owners } as unknown as PlotItem);
 
-        await service.syncEntity('item', newItem, oldItem);
+    it('adds the item to the new owner ownedItems', async () => {
+        await service.syncEntity('item', lens(['Mira Vey']), lens([]));
 
         expect(db.characters[0].ownedItems).toContain('The Tide Lens');
         expect(db.savedCharacters.map(c => c.name)).toContain('Mira Vey');
     });
 
-    it('moves the item between owners when currentOwner changes', async () => {
-        const oldItem = { id: 'item-lens', name: 'The Tide Lens', currentOwner: 'Tollen Brask' } as unknown as PlotItem;
-        const newItem = { id: 'item-lens', name: 'The Tide Lens', currentOwner: 'Mira Vey' } as unknown as PlotItem;
-
-        await service.syncEntity('item', newItem, oldItem);
+    it('moves the item between owners when owners changes', async () => {
+        await service.syncEntity('item', lens(['Mira Vey']), lens(['Tollen Brask']));
 
         expect(db.characters[1].ownedItems).not.toContain('The Tide Lens');
         expect(db.characters[0].ownedItems).toContain('The Tide Lens');
     });
 
+    it('keeps the item in both inventories when a second owner is added', async () => {
+        await service.syncEntity('item', lens(['Tollen Brask', 'Mira Vey']), lens(['Tollen Brask']));
+
+        expect(db.characters[0].ownedItems).toContain('The Tide Lens');
+        expect(db.characters[1].ownedItems).toContain('The Tide Lens');
+    });
+
+    it('removes only the dropped owner when one of several is taken off', async () => {
+        db.characters[0].ownedItems = ['The Tide Lens'];
+        await service.syncEntity('item', lens(['Mira Vey']), lens(['Mira Vey', 'Tollen Brask']));
+
+        expect(db.characters[0].ownedItems).toContain('The Tide Lens');
+        expect(db.characters[1].ownedItems).not.toContain('The Tide Lens');
+    });
+
+    it('clears every inventory when the last owner is removed', async () => {
+        db.characters[0].ownedItems = ['The Tide Lens'];
+        await service.syncEntity('item', lens([]), lens(['Mira Vey', 'Tollen Brask']));
+
+        expect(db.characters[0].ownedItems).not.toContain('The Tide Lens');
+        expect(db.characters[1].ownedItems).not.toContain('The Tide Lens');
+    });
+
     it('initializes ownedItems when the character lacks the field', async () => {
         delete (db.characters[0] as unknown as Record<string, unknown>).ownedItems;
-        const newItem = { id: 'item-lens', name: 'The Tide Lens', currentOwner: 'Mira Vey' } as unknown as PlotItem;
 
-        await service.syncEntity('item', newItem, undefined);
+        await service.syncEntity('item', lens(['Mira Vey']), undefined);
 
         expect(db.characters[0].ownedItems).toContain('The Tide Lens');
     });
 
     it('syncs when no oldEntity is provided (first save)', async () => {
-        const newItem = { id: 'item-lens', name: 'The Tide Lens', currentOwner: 'Mira Vey' } as unknown as PlotItem;
-        await service.syncEntity('item', newItem, undefined);
+        await service.syncEntity('item', lens(['Mira Vey']), undefined);
         expect(db.characters[0].ownedItems).toContain('The Tide Lens');
     });
 
     it('resolves the owner case-insensitively', async () => {
-        const newItem = { id: 'item-lens', name: 'The Tide Lens', currentOwner: 'mira vey' } as unknown as PlotItem;
-        await service.syncEntity('item', newItem, undefined);
+        await service.syncEntity('item', lens(['mira vey']), undefined);
         expect(db.characters[0].ownedItems).toContain('The Tide Lens');
     });
 
-    it('reverse direction: character ownedItems change updates item currentOwner as a SCALAR', async () => {
-        db.items.push({ id: 'item-lens', name: 'The Tide Lens', currentOwner: undefined, isPlotCritical: false } as unknown as PlotItem);
+    it('reverse direction: character ownedItems change adds the character to item owners', async () => {
+        db.items.push(lens([]));
         const oldChar = { id: 'char-mira', name: 'Mira Vey', ownedItems: [] } as unknown as Character;
         const newChar = { id: 'char-mira', name: 'Mira Vey', ownedItems: ['The Tide Lens'] } as unknown as Character;
 
         await service.syncEntity('character', newChar, oldChar);
 
-        // Regression: the old reverse path array-wrapped scalar source fields,
-        // writing currentOwner: [name] into item notes.
-        expect(db.items[0].currentOwner).toBe('Mira Vey');
+        expect(db.items[0].owners).toEqual(['Mira Vey']);
         expect(db.savedItems.map(i => i.name)).toContain('The Tide Lens');
     });
 
-    it('reverse removal collapses an array-corrupted currentOwner back to scalar shape', async () => {
-        db.items.push({
-            id: 'item-lens', name: 'The Tide Lens', isPlotCritical: false,
-            currentOwner: ['Mira Vey', 'Tollen Brask'] as unknown as string,
-        } as unknown as PlotItem);
+    it('reverse removal takes one owner off without disturbing the others', async () => {
+        db.items.push(lens(['Mira Vey', 'Tollen Brask']));
         const oldChar = { id: 'char-mira', name: 'Mira Vey', ownedItems: ['The Tide Lens'] } as unknown as Character;
         const newChar = { id: 'char-mira', name: 'Mira Vey', ownedItems: [] } as unknown as Character;
 
         await service.syncEntity('character', newChar, oldChar);
 
-        expect(db.items[0].currentOwner).toBe('Tollen Brask');
+        expect(db.items[0].owners).toEqual(['Tollen Brask']);
+    });
+});
+
+describe('EntitySyncService — item creator ↔ character createdItems', () => {
+    let db: MockDb;
+    let service: EntitySyncService;
+
+    beforeEach(() => {
+        db = {
+            characters: [
+                { id: 'char-mira', name: 'Mira Vey', ownedItems: [] } as unknown as Character,
+                { id: 'char-tollen', name: 'Tollen Brask', ownedItems: [] } as unknown as Character,
+            ],
+            items: [],
+            savedCharacters: [],
+            savedItems: [],
+        };
+        service = new EntitySyncService(createMockPlugin(db));
     });
 
-    it('forward sync removes every former owner when the old value was array-corrupted', async () => {
-        db.characters[0].ownedItems = ['The Tide Lens'];
-        db.characters[1].ownedItems = ['The Tide Lens'];
-        const oldItem = {
-            id: 'item-lens', name: 'The Tide Lens',
-            currentOwner: ['Mira Vey', 'Tollen Brask'] as unknown as string,
-        } as unknown as PlotItem;
-        const newItem = { id: 'item-lens', name: 'The Tide Lens', currentOwner: 'Mira Vey' } as unknown as PlotItem;
+    const lens = (creator?: string): PlotItem =>
+        ({ id: 'item-lens', name: 'The Tide Lens', isPlotCritical: false, creator } as unknown as PlotItem);
 
-        await service.syncEntity('item', newItem, oldItem);
+    it('adds the item to the creator createdItems', async () => {
+        await service.syncEntity('item', lens('Mira Vey'), lens(undefined));
 
-        expect(db.characters[1].ownedItems).not.toContain('The Tide Lens');
-        expect(db.characters[0].ownedItems).toContain('The Tide Lens');
+        expect(db.characters[0].createdItems).toContain('The Tide Lens');
+    });
+
+    it('moves the credit when the creator changes', async () => {
+        db.characters[1].createdItems = ['The Tide Lens'];
+
+        await service.syncEntity('item', lens('Mira Vey'), lens('Tollen Brask'));
+
+        expect(db.characters[1].createdItems).not.toContain('The Tide Lens');
+        expect(db.characters[0].createdItems).toContain('The Tide Lens');
+    });
+
+    it('keeps creator a scalar on the reverse path', async () => {
+        db.items.push(lens(undefined));
+        const oldChar = { id: 'char-mira', name: 'Mira Vey', createdItems: [] } as unknown as Character;
+        const newChar = { id: 'char-mira', name: 'Mira Vey', createdItems: ['The Tide Lens'] } as unknown as Character;
+
+        await service.syncEntity('character', newChar, oldChar);
+
+        expect(db.items[0].creator).toBe('Mira Vey');
     });
 });

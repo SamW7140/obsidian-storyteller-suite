@@ -141,11 +141,31 @@ export interface PlotItem {
     /** The origin, past events, and lore associated with the item (stored in markdown body) */
     history?: string;
 
-    /** Link to the Character who currently possesses the item */
+    /**
+     * Links to the Characters who currently possess the item. An item that
+     * exists in more than one copy can be held by several owners at once.
+     */
+    owners?: string[];
+
+    /**
+     * Legacy single owner. Superseded by `owners`, which a note's `currentOwner`
+     * is hoisted into on read. Still declared so old notes type-check while they
+     * wait to be rewritten; nothing should write it.
+     * @deprecated use `owners`
+     */
     currentOwner?: string;
 
     /** Links to Characters who previously owned the item */
     pastOwners?: string[];
+
+    /** Link to the Character who made the item */
+    creator?: string;
+
+    /** How many of this item exist. Left unset for one-of-a-kind items. */
+    quantity?: number;
+
+    /** Where copies of the item can be found or obtained (stored in markdown body) */
+    whereToFind?: string;
 
     /** Link to the Location where the item currently is */
     currentLocation?: string;
@@ -432,6 +452,9 @@ export interface Character {
 
     /** Names of items currently owned by this character */
     ownedItems?: string[];
+
+    /** Names of items this character made (reverse link from PlotItem.creator) */
+    createdItems?: string[];
 
     /** IDs of cultures this character belongs to */
     cultures?: string[];

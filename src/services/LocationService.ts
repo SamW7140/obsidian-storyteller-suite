@@ -6,7 +6,7 @@
 import { Notice, requestUrl } from 'obsidian';
 import type StorytellerSuitePlugin from '../main';
 import type { Location, MapBinding, EntityRef, Character, PlotItem } from '../types';
-import { getTrackedItemOwner } from '../utils/ItemOwnership';
+import { getTrackedItemOwner, getOwners } from '../utils/ItemOwnership';
 
 export interface GetEntitiesAtLocationOptions {
     /** Include entities from child locations */
@@ -69,9 +69,10 @@ export class LocationService {
         const trackedOwner = getTrackedItemOwner(item, characters);
         if (!trackedOwner) return;
 
-        if (item.currentOwner) {
+        const owners = getOwners(item);
+        if (owners.length > 0) {
             new Notice(
-                `${item.name} is currently owned by ${item.currentOwner}. ` +
+                `${item.name} is currently owned by ${owners.join(', ')}. ` +
                 `Setting its location may conflict with ownership tracking.`,
                 7000
             );
