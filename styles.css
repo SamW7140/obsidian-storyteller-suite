@@ -11440,6 +11440,11 @@ body.mod-rtl .storyteller-group-members {
   outline: none;
   touch-action: none;
   user-select: none;
+
+  /* Milestone stars are gold whatever lane they sit in, so they can be found
+     without first reading the legend. Override these to restyle them. */
+  --sts-timeline-milestone: #d9a520;
+  --sts-timeline-milestone-edge: #8a6410;
 }
 
 .sts-native-timeline:focus-visible {

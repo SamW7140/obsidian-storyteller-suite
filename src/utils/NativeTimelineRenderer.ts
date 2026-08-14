@@ -103,6 +103,9 @@ const MIN_CHRONOLOGY_CHIP_WIDTH = 92;
 const CHIP_GAP = 8;
 /** A wheel notch in line mode is worth roughly this many pixels. */
 const WHEEL_LINE_HEIGHT = 16;
+/** Milestone gold, overridable through --sts-timeline-milestone. */
+const MILESTONE_GOLD = '#d9a520';
+const MILESTONE_GOLD_EDGE = '#8a6410';
 
 export class NativeTimelineRenderer {
     private readonly app: App;
@@ -1034,12 +1037,15 @@ export class NativeTimelineRenderer {
             if (item.approximate) ctx.setLineDash([3, 3]);
             ctx.stroke();
             ctx.setLineDash([]);
-            ctx.fillStyle = accent;
+            ctx.fillStyle = this.markerColor(item);
             const markerX = rect.x + 10;
             const markerY = rect.y + rect.height / 2;
             if (item.event.isMilestone) {
                 this.starPath(ctx, markerX, markerY, 6.5);
                 ctx.fill();
+                ctx.strokeStyle = this.css('--sts-timeline-milestone-edge', MILESTONE_GOLD_EDGE);
+                ctx.lineWidth = 1;
+                ctx.stroke();
             } else {
                 ctx.beginPath();
                 ctx.arc(markerX, markerY, 4, 0, Math.PI * 2);
@@ -1100,12 +1106,30 @@ export class NativeTimelineRenderer {
         ctx.closePath();
     }
 
+    /**
+     * Colour for an item's axis marker.
+     *
+     * Milestones are always gold. That is the whole point of the star: it should
+     * be findable at a glance without first working out which lane it belongs
+     * to, so it keeps its colour even when the lane has one of its own.
+     * Selection still reads through the chip border.
+     */
+    private markerColor(item: NativeItem): string {
+        if (item.event.isMilestone) return this.css('--sts-timeline-milestone', MILESTONE_GOLD);
+        return item === this.selected ? this.css('--interactive-accent', '#8b5cf6') : item.laneColor;
+    }
+
     private drawPointMarker(ctx: CanvasRenderingContext2D, x: number, y: number, item: NativeItem): void {
         ctx.save();
-        ctx.fillStyle = item === this.selected ? this.css('--interactive-accent', '#8b5cf6') : item.laneColor;
+        ctx.fillStyle = this.markerColor(item);
         if (item.event.isMilestone) {
             this.starPath(ctx, x, y, 7.5);
             ctx.fill();
+            // A thin darker rim keeps the points legible against a light theme
+            // or a pale era band behind them.
+            ctx.strokeStyle = this.css('--sts-timeline-milestone-edge', MILESTONE_GOLD_EDGE);
+            ctx.lineWidth = 1;
+            ctx.stroke();
         } else {
             ctx.beginPath(); ctx.arc(x, y, 5, 0, Math.PI * 2); ctx.fill();
         }
