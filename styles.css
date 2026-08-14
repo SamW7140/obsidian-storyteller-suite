@@ -11458,6 +11458,56 @@ body.mod-rtl .storyteller-group-members {
   cursor: ew-resize;
 }
 
+/* Hover card for a timeline item. Canvas has no per-region title attribute, so
+   the detail the old renderer put in a tooltip is drawn in this element. */
+.sts-native-timeline-tooltip {
+  position: absolute;
+  z-index: 20;
+  max-width: 280px;
+  padding: 8px 10px;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 6px;
+  background: var(--background-secondary);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.35);
+  font-size: 12px;
+  line-height: 1.4;
+  pointer-events: none;
+}
+
+.sts-native-timeline-tooltip-title {
+  font-weight: 600;
+  color: var(--text-normal);
+}
+
+.sts-native-timeline-tooltip-meta {
+  color: var(--text-muted);
+  font-size: 11px;
+}
+
+.sts-native-timeline-tooltip-body {
+  margin-top: 4px;
+  color: var(--text-normal);
+}
+
+.sts-native-timeline-tooltip-conflicts {
+  margin-top: 6px;
+  padding-top: 6px;
+  border-top: 1px solid var(--background-modifier-border);
+}
+
+.sts-native-timeline-tooltip-conflict {
+  color: var(--text-muted);
+  font-size: 11px;
+}
+
+.sts-native-timeline-tooltip-conflict.is-error {
+  color: var(--color-red);
+}
+
+.sts-native-timeline-tooltip-conflict.is-warning {
+  color: var(--color-yellow);
+}
+
 /* Per-story folder overrides in the edit story modal. Indented and bounded so
    a 17-field list reads as a subsection rather than dominating the dialog. */
 .storyteller-story-folder-overrides {

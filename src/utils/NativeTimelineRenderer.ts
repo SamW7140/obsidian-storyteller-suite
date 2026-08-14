@@ -66,6 +66,8 @@ interface NativeItem {
      * dropped, but the label that would be unreadable is left out.
      */
     labelSuppressed?: boolean;
+    /** Date was written loosely, so the chip is outlined rather than solid. */
+    approximate?: boolean;
 }
 
 interface Lane {
@@ -123,6 +125,9 @@ export class NativeTimelineRenderer {
     private lanes: Lane[] = [];
     private visibleItems: NativeItem[] = [];
     private selected: NativeItem | null = null;
+    private conflictsByEvent = new Map<string, DetectedConflict[]>();
+    private tooltipEl: HTMLElement | null = null;
+    private hovered: NativeItem | null = null;
     private viewStart = Date.now() - YEAR_MS;
     private viewEnd = Date.now() + YEAR_MS;
     private scrollTop = 0;
@@ -190,6 +195,8 @@ export class NativeTimelineRenderer {
         this.root = null;
         this.canvas = null;
         this.ctx = null;
+        this.tooltipEl = null;
+        this.hovered = null;
     }
 
     getVisibleEvents(): Event[] {
@@ -302,6 +309,8 @@ export class NativeTimelineRenderer {
         this.root.setAttribute('aria-label', 'Story timeline');
         this.canvas = this.root.createEl('canvas', { cls: 'sts-native-timeline-canvas' });
         this.ctx = this.canvas.getContext('2d');
+        this.tooltipEl = this.root.createDiv('sts-native-timeline-tooltip');
+        this.tooltipEl.hide();
         this.bindEvents();
         this.resizeObserver = new ResizeObserver(() => this.redraw());
         this.resizeObserver.observe(this.root);
@@ -316,6 +325,7 @@ export class NativeTimelineRenderer {
         this.canvas.addEventListener('pointercancel', event => { void this.onPointerUp(event); });
         this.canvas.addEventListener('dblclick', event => this.openAt(event.offsetX, event.offsetY));
         this.canvas.addEventListener('wheel', event => this.onWheel(event), { passive: false });
+        this.canvas.addEventListener('pointerleave', () => this.hideTooltip());
         this.root.addEventListener('keydown', event => this.onKeyDown(event));
     }
 
@@ -325,8 +335,20 @@ export class NativeTimelineRenderer {
         // Conflict analysis is secondary to rendering and can be quadratic for
         // dense character histories. Keep large timelines interactive; users
         // can still run the dedicated conflict tools against the full dataset.
+        this.conflictsByEvent.clear();
         if (sourceEvents.length <= 10_000) {
-            this.options.onConflictsDetected?.(ConflictDetector.detectAllConflicts(sourceEvents));
+            const conflicts = ConflictDetector.detectAllConflicts(sourceEvents);
+            // Keep them indexed so an item can show its own severity and the
+            // tooltip can list the messages, the way the vis renderer did.
+            conflicts.forEach(conflict => {
+                conflict.events.forEach(event => {
+                    const key = this.eventKey(event);
+                    const existing = this.conflictsByEvent.get(key);
+                    if (existing) existing.push(conflict);
+                    else this.conflictsByEvent.set(key, [conflict]);
+                });
+            });
+            this.options.onConflictsDetected?.(conflicts);
         }
         this.lanes = this.buildLanes(sourceEvents);
         this.layoutRows();
@@ -416,7 +438,17 @@ export class NativeTimelineRenderer {
         const start = rangeParts[0] ? this.parseDate(rangeParts[0]) : NaN;
         const explicitEnd = rangeParts[1] ? this.parseDate(rangeParts[1]) : NaN;
         const end = Number.isFinite(explicitEnd) ? explicitEnd : (this.options.ganttMode && !event.isMilestone ? start + this.options.defaultGanttDuration * DAY_MS : start);
-        return { id: `${this.eventKey(event)}:${lane.id}:${duplicateIndex}`, event, eventIndex, start, end: Math.max(start, end), laneId: lane.id, laneLabel: lane.label, laneColor: lane.color, row: 0 };
+        return { id: `${this.eventKey(event)}:${lane.id}:${duplicateIndex}`, event, eventIndex, start, end: Math.max(start, end), laneId: lane.id, laneLabel: lane.label, laneColor: lane.color, row: 0, approximate: this.isApproximate(event) };
+    }
+
+    /**
+     * Whether the event's date was written loosely ("around 1420", "early
+     * spring"). Drawn with a dashed outline so a guess does not read as a fact.
+     */
+    private isApproximate(event: Event): boolean {
+        if (!event.dateTime) return false;
+        const first = event.dateTime.split(/\s+(?:to|through|until)\s+/i)[0];
+        return !!parseEventDate(first, { referenceDate: this.referenceDate }).approximate;
     }
 
     /**
@@ -428,8 +460,29 @@ export class NativeTimelineRenderer {
      */
     private chipWidth(ctx: CanvasRenderingContext2D, item: NativeItem, minimum: number): number {
         ctx.font = `11px ${this.css('--font-interface', 'sans-serif')}`;
-        const markers = `${item.event.narrativeMarkers?.isFlashback ? 'FB ' : ''}${item.event.narrativeMarkers?.isFlashforward ? 'FF ' : ''}`;
-        return Math.max(minimum, Math.min(MAX_CHIP_WIDTH, ctx.measureText(markers + item.event.name).width + 34));
+        return Math.max(minimum, Math.min(MAX_CHIP_WIDTH, ctx.measureText(this.itemLabel(item)).width + 34));
+    }
+
+    /**
+     * The text drawn on an item's chip.
+     *
+     * Prefixes carry the same signals the vis renderer put in the label: a
+     * conflict marker, the narrative sequence number when reading in narrative
+     * order, and flashback or flashforward flags.
+     */
+    private itemLabel(item: NativeItem): string {
+        const event = item.event;
+        const severity = this.conflictSeverity(event);
+        const parts: string[] = [];
+        if (severity === 'error') parts.push('!!');
+        else if (severity === 'warning') parts.push('!');
+        if (this.options.narrativeOrder && event.narrativeSequence !== undefined) {
+            parts.push(`[${event.narrativeSequence}]`);
+        }
+        if (event.narrativeMarkers?.isFlashback) parts.push('FB');
+        if (event.narrativeMarkers?.isFlashforward) parts.push('FF');
+        parts.push(event.name || '(Untitled event)');
+        return parts.join(' ');
     }
 
     private layoutRows(): void {
@@ -978,16 +1031,15 @@ export class NativeTimelineRenderer {
             ctx.fill();
             ctx.strokeStyle = item === this.selected ? this.css('--interactive-accent', '#8b5cf6') : this.css('--background-modifier-border', '#374151');
             ctx.lineWidth = item === this.selected ? 2 : 1;
+            if (item.approximate) ctx.setLineDash([3, 3]);
             ctx.stroke();
+            ctx.setLineDash([]);
             ctx.fillStyle = accent;
             const markerX = rect.x + 10;
             const markerY = rect.y + rect.height / 2;
             if (item.event.isMilestone) {
-                ctx.save();
-                ctx.translate(markerX, markerY);
-                ctx.rotate(Math.PI / 4);
-                ctx.fillRect(-5, -5, 10, 10);
-                ctx.restore();
+                this.starPath(ctx, markerX, markerY, 6.5);
+                ctx.fill();
             } else {
                 ctx.beginPath();
                 ctx.arc(markerX, markerY, 4, 0, Math.PI * 2);
@@ -996,6 +1048,14 @@ export class NativeTimelineRenderer {
         } else {
             ctx.fillStyle = accent;
             this.roundedRect(ctx, rect.x, rect.y, rect.width, rect.height, 3); ctx.fill();
+            if (item.approximate) {
+                ctx.strokeStyle = this.css('--background-primary', '#111827');
+                ctx.lineWidth = 1;
+                ctx.setLineDash([3, 3]);
+                this.roundedRect(ctx, rect.x, rect.y, rect.width, rect.height, 3);
+                ctx.stroke();
+                ctx.setLineDash([]);
+            }
             if (this.options.showProgressBars && typeof item.event.progress === 'number') {
                 ctx.fillStyle = this.css('--text-on-accent', '#fff');
                 ctx.globalAlpha = 0.3;
@@ -1006,19 +1066,46 @@ export class NativeTimelineRenderer {
         const labelX = isPoint ? rect.x + 22 : rect.x + 6;
         const available = isPoint ? Math.max(0, rect.width - 28) : Math.max(0, rect.width - 12);
         if (available > 18) {
-            ctx.fillStyle = isPoint ? this.css('--text-normal', '#e5e7eb') : this.css('--text-on-accent', '#fff');
+            const severity = this.conflictSeverity(item.event);
+            ctx.fillStyle = severity === 'error'
+                ? this.css('--color-red', '#ef4444')
+                : severity === 'warning'
+                    ? this.css('--color-yellow', '#eab308')
+                    : isPoint ? this.css('--text-normal', '#e5e7eb') : this.css('--text-on-accent', '#fff');
             ctx.font = `11px ${this.css('--font-interface', 'sans-serif')}`;
-            const markers = `${item.event.narrativeMarkers?.isFlashback ? 'FB ' : ''}${item.event.narrativeMarkers?.isFlashforward ? 'FF ' : ''}`;
-            ctx.fillText(this.truncate(ctx, labelOverride || markers + item.event.name, available), labelX, rect.y + rect.height / 2 + 4);
+            ctx.fillText(this.truncate(ctx, labelOverride || this.itemLabel(item), available), labelX, rect.y + rect.height / 2 + 4);
         }
         ctx.restore();
+    }
+
+    /**
+     * Five-pointed star, drawn centred on (x, y).
+     *
+     * Milestones read as stars rather than diamonds. The vis-timeline renderer
+     * this replaced marked them with a literal ★ in the label, so this keeps the
+     * meaning people already learned while drawing it as a shape.
+     */
+    private starPath(ctx: CanvasRenderingContext2D, x: number, y: number, radius: number): void {
+        const inner = radius * 0.42;
+        ctx.beginPath();
+        for (let point = 0; point < 10; point++) {
+            const distance = point % 2 === 0 ? radius : inner;
+            // Start at twelve o'clock so the star sits upright.
+            const angle = -Math.PI / 2 + point * Math.PI / 5;
+            const px = x + Math.cos(angle) * distance;
+            const py = y + Math.sin(angle) * distance;
+            if (point === 0) ctx.moveTo(px, py);
+            else ctx.lineTo(px, py);
+        }
+        ctx.closePath();
     }
 
     private drawPointMarker(ctx: CanvasRenderingContext2D, x: number, y: number, item: NativeItem): void {
         ctx.save();
         ctx.fillStyle = item === this.selected ? this.css('--interactive-accent', '#8b5cf6') : item.laneColor;
         if (item.event.isMilestone) {
-            ctx.translate(x, y); ctx.rotate(Math.PI / 4); ctx.fillRect(-6, -6, 12, 12);
+            this.starPath(ctx, x, y, 7.5);
+            ctx.fill();
         } else {
             ctx.beginPath(); ctx.arc(x, y, 5, 0, Math.PI * 2); ctx.fill();
         }
@@ -1114,7 +1201,101 @@ export class NativeTimelineRenderer {
         this.dragging = { kind: 'pan', x: event.clientX, y: event.clientY, start: this.viewStart, end: this.viewEnd };
     }
 
+    /** Conflicts recorded against this event, worst first. */
+    private conflictsFor(event: Event): DetectedConflict[] {
+        return this.conflictsByEvent.get(this.eventKey(event)) ?? [];
+    }
+
+    private conflictSeverity(event: Event): 'error' | 'warning' | null {
+        const conflicts = this.conflictsFor(event);
+        if (conflicts.some(conflict => conflict.severity === 'error')) return 'error';
+        if (conflicts.some(conflict => conflict.severity === 'warning')) return 'warning';
+        return null;
+    }
+
+    /**
+     * Fill the hover card for an item.
+     *
+     * Canvas has no per-region title attribute, so the detail the vis renderer
+     * put in a tooltip is drawn into a floating element instead.
+     */
+    private buildTooltip(item: NativeItem): void {
+        const tooltip = this.tooltipEl;
+        if (!tooltip) return;
+        tooltip.empty();
+        const event = item.event;
+
+        tooltip.createDiv({ cls: 'sts-native-timeline-tooltip-title', text: event.name || '(Untitled event)' });
+
+        const when = event.dateTime?.trim();
+        if (when) tooltip.createDiv({ cls: 'sts-native-timeline-tooltip-meta', text: when });
+
+        const where = event.location ? this.resolveLocationName(event.location) : '';
+        if (where) tooltip.createDiv({ cls: 'sts-native-timeline-tooltip-meta', text: `@ ${where}` });
+
+        if (this.lanes.length > 1 && item.laneLabel) {
+            tooltip.createDiv({ cls: 'sts-native-timeline-tooltip-meta', text: item.laneLabel });
+        }
+
+        if (event.description) {
+            const text = event.description.length > 160 ? `${event.description.slice(0, 160)}…` : event.description;
+            tooltip.createDiv({ cls: 'sts-native-timeline-tooltip-body', text });
+        }
+
+        const conflicts = this.conflictsFor(event);
+        if (conflicts.length) {
+            const list = tooltip.createDiv({ cls: 'sts-native-timeline-tooltip-conflicts' });
+            conflicts.slice(0, 3).forEach(conflict => {
+                list.createDiv({
+                    cls: `sts-native-timeline-tooltip-conflict is-${conflict.severity}`,
+                    text: conflict.message
+                });
+            });
+            if (conflicts.length > 3) {
+                list.createDiv({
+                    cls: 'sts-native-timeline-tooltip-conflict',
+                    text: `and ${conflicts.length - 3} more`
+                });
+            }
+        }
+    }
+
+    private showTooltip(item: NativeItem, x: number, y: number): void {
+        const tooltip = this.tooltipEl;
+        const root = this.root;
+        if (!tooltip || !root) return;
+        if (this.hovered !== item) {
+            this.hovered = item;
+            this.buildTooltip(item);
+        }
+        tooltip.show();
+        // Flip to the other side of the cursor when the card would run past the
+        // edge, so it never gets clipped by the timeline's own overflow.
+        const width = tooltip.offsetWidth;
+        const height = tooltip.offsetHeight;
+        const left = x + 14 + width > root.clientWidth ? Math.max(4, x - width - 14) : x + 14;
+        const top = y + 18 + height > root.clientHeight ? Math.max(4, y - height - 12) : y + 18;
+        tooltip.style.left = `${left}px`;
+        tooltip.style.top = `${top}px`;
+    }
+
+    private hideTooltip(): void {
+        this.hovered = null;
+        this.tooltipEl?.hide();
+    }
+
+    private onHoverMove(event: PointerEvent): void {
+        if (this.dragging || this.pinch) {
+            this.hideTooltip();
+            return;
+        }
+        const item = this.hit(event.offsetX, event.offsetY);
+        if (item) this.showTooltip(item, event.offsetX, event.offsetY);
+        else this.hideTooltip();
+    }
+
     private onPointerMove(event: PointerEvent): void {
+        this.onHoverMove(event);
         if (this.activePointers.has(event.pointerId)) this.activePointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
         if (this.activePointers.size >= 2 && this.pinch) {
             this.updatePinch();
@@ -1311,6 +1492,16 @@ export class NativeTimelineRenderer {
     }
 
     /** Every location an item can be filtered by. Scenes can link more than one. */
+    /**
+     * A location's display name. Events store either an id or an already
+     * readable name, so try both before falling back to the raw value.
+     */
+    private resolveLocationName(value: string): string {
+        const match = this.locations.find(location => location.id === value)
+            || this.locations.find(location => location.name === value);
+        return match?.name || value;
+    }
+
     private eventLocations(event: Event): string[] {
         const sceneLocations = (event as TimelineEvent)._sceneLocations;
         if (sceneLocations?.length) return sceneLocations;
