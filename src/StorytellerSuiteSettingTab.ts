@@ -11,6 +11,8 @@ import {
 import StorytellerSuitePlugin from './main';
 import { NewStoryModal } from './modals/NewStoryModal';
 import { EditStoryModal } from './modals/EditStoryModal';
+import type { StoryFolderOverrides } from './folders/FolderResolver';
+import { MODAL_FIELD_SETS, isModalFieldVisible, setModalFieldHidden } from './modals/entity/ModalFieldVisibility';
 import { FolderSuggestModal } from './modals/FolderSuggestModal';
 import { CustomSheetTemplateModal } from './modals/CustomSheetTemplateModal';
 import { getGettingStartedGuide, renderGuideDocument } from './tutorial/StorytellerGuideContent';
@@ -23,11 +25,6 @@ import { CalendarRegistry } from './calendar/CalendarRegistry';
 import { encodeShareCode, makeCalendarDocument, makeThemeDocument } from './calendar/TimelineDocuments';
 import { CalendarManagerModal } from './modals/CalendarManagerModal';
 import { PlatformUtils } from './utils/PlatformUtils';
-import {
-    getModalSections,
-    isModalSectionHidden,
-    setModalSectionHidden
-} from './modals/EntityModalSections';
 
 type TabId = 'stories' | 'dashboard' | 'modals' | 'folders' | 'timeline' | 'maps' | 'templates' | 'gallery' | 'help';
 
@@ -396,8 +393,8 @@ export class StorytellerSuiteSettingTab extends PluginSettingTab {
                         const existingNames = this.plugin.settings.stories.map(s => s.name);
                         new EditStoryModal(
                             this.app, this.plugin, story, existingNames,
-                            async (name: string, description?: string) => {
-                                await this.plugin.updateStory(story.id, name, description);
+                            async (name: string, description?: string, folderOverrides?: StoryFolderOverrides) => {
+                                await this.plugin.updateStory(story.id, name, description, folderOverrides);
                                 this.refreshSettingsView();
                             }
                         ).open();
@@ -458,6 +455,7 @@ export class StorytellerSuiteSettingTab extends PluginSettingTab {
     }
 
     // ─── Tab: Dashboard ───────────────────────────────────────────────────────
+
     private renderDashboardTab(container: HTMLElement): void {
         new Setting(container).setName('Writing goal').setHeading();
 
@@ -600,6 +598,7 @@ export class StorytellerSuiteSettingTab extends PluginSettingTab {
                     })
                 );
         });
+
     }
 
     // ─── Tab: Modals ──────────────────────────────────────────────────────────
@@ -616,24 +615,29 @@ export class StorytellerSuiteSettingTab extends PluginSettingTab {
         for (const entityType of MODAL_CUSTOMIZABLE_ENTITY_TYPES) {
             new Setting(container).setName(MODAL_ENTITY_LABELS[entityType]).setHeading();
 
-            for (const section of getModalSections(entityType)) {
-                const isHidden = isModalSectionHidden(
-                    this.plugin.settings.hiddenEntityModalSections,
+            let lastGroup: string | undefined;
+            for (const field of MODAL_FIELD_SETS[entityType] ?? []) {
+                if (field.group && field.group !== lastGroup) {
+                    container.createEl('p', { cls: 'setting-item-description', text: field.group });
+                    lastGroup = field.group;
+                }
+                const isVisible = isModalFieldVisible(
+                    this.plugin.settings.hiddenModalFields,
                     entityType,
-                    section.id
+                    field.key
                 );
                 new Setting(container)
-                    .setName(section.label)
+                    .setName(field.label)
                     .addToggle(toggle => toggle
-                        .setValue(!isHidden)
-                        .setTooltip(isHidden ? 'Hidden' : 'Shown')
+                        .setValue(isVisible)
+                        .setTooltip(isVisible ? 'Shown' : 'Hidden')
                         .onChange(async (shown) => {
-                            this.plugin.settings.hiddenEntityModalSections = setModalSectionHidden(
-                                this.plugin.settings.hiddenEntityModalSections,
+                            this.plugin.settings.hiddenModalFields = setModalFieldHidden(
+                                this.plugin.settings.hiddenModalFields,
                                 entityType,
-                                section.id,
+                                field.key,
                                 !shown
-                            ) as Record<string, string[]>;
+                            );
                             await this.plugin.saveSettings();
                         })
                     );
@@ -747,7 +751,8 @@ export class StorytellerSuiteSettingTab extends PluginSettingTab {
                 shared.setText(
                     'These folder paths contain no {storyName}, {storySlug}, or {storyId} placeholder, ' +
                     'so all ' + this.plugin.settings.stories.length + ' of your stories read and write the same folders. ' +
-                    'Add a placeholder to a path (for example Stories/{storyName}/Characters) to keep each story separate.'
+                    'Add a placeholder to a path (for example Stories/{storyName}/Characters), or set a folder ' +
+                    'layout on the individual story, to keep each story separate.'
                 );
             }
 

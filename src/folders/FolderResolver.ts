@@ -25,7 +25,33 @@ export interface FolderResolverOptions {
   oneStoryBaseFolder?: string | undefined;
 }
 
-export interface StoryMinimal { id: string; name: string; }
+/**
+ * Folder settings a single story can override. Every key is optional and a
+ * blank value means "inherit", never "use the built-in default" — an override
+ * that read back as empty would silently relocate a story's entities.
+ */
+export type StoryFolderOverrides = Pick<
+  FolderResolverOptions,
+  | 'storyRootFolderTemplate'
+  | 'characterFolderPath'
+  | 'locationFolderPath'
+  | 'eventFolderPath'
+  | 'itemFolderPath'
+  | 'referenceFolderPath'
+  | 'chapterFolderPath'
+  | 'sceneFolderPath'
+  | 'mapFolderPath'
+  | 'cultureFolderPath'
+  | 'factionFolderPath'
+  | 'economyFolderPath'
+  | 'magicSystemFolderPath'
+  | 'groupFolderPath'
+  | 'compendiumFolderPath'
+  | 'bookFolderPath'
+  | 'sessionsFolderPath'
+>;
+
+export interface StoryMinimal { id: string; name: string; folderOverrides?: StoryFolderOverrides; }
 
 /**
  * FolderResolver centralizes entity folder path rules for:
@@ -36,25 +62,38 @@ export interface StoryMinimal { id: string; name: string; }
 export class FolderResolver {
   constructor(private opts: FolderResolverOptions, private getActiveStory: () => StoryMinimal | undefined) {}
 
+  /**
+   * Read a folder path, preferring the active story's override.
+   *
+   * A blank or missing override inherits the plugin-wide value. That direction
+   * matters: treating an empty override as "no path configured" would send the
+   * resolver to the built-in default leaf and every existing entity of that
+   * story would appear to vanish from its real folder.
+   */
+  private path(key: keyof StoryFolderOverrides): string | undefined {
+    const override = this.getActiveStory()?.folderOverrides?.[key];
+    if (override && override.trim()) return override;
+    return this.opts[key];
+  }
+
   private getConfiguredEntityPaths(): Array<string | undefined> {
-    const o = this.opts;
     return [
-      o.characterFolderPath,
-      o.locationFolderPath,
-      o.eventFolderPath,
-      o.itemFolderPath,
-      o.referenceFolderPath,
-      o.chapterFolderPath,
-      o.sceneFolderPath,
-      o.mapFolderPath,
-      o.cultureFolderPath,
-      o.factionFolderPath,
-      o.economyFolderPath,
-      o.magicSystemFolderPath,
-      o.groupFolderPath,
-      o.compendiumFolderPath,
-      o.bookFolderPath,
-      o.sessionsFolderPath,
+      this.path('characterFolderPath'),
+      this.path('locationFolderPath'),
+      this.path('eventFolderPath'),
+      this.path('itemFolderPath'),
+      this.path('referenceFolderPath'),
+      this.path('chapterFolderPath'),
+      this.path('sceneFolderPath'),
+      this.path('mapFolderPath'),
+      this.path('cultureFolderPath'),
+      this.path('factionFolderPath'),
+      this.path('economyFolderPath'),
+      this.path('magicSystemFolderPath'),
+      this.path('groupFolderPath'),
+      this.path('compendiumFolderPath'),
+      this.path('bookFolderPath'),
+      this.path('sessionsFolderPath'),
     ];
   }
 
@@ -79,31 +118,59 @@ export class FolderResolver {
    * When true, listChapters / listScenes must scan one folder per book + one unassigned folder.
    */
   usesBookName(type: EntityFolderType): boolean {
-    const o = this.opts;
-    if (!o.enableCustomEntityFolders) return false;
-    const pathMap: Partial<Record<EntityFolderType, string | undefined>> = {
-      character:      o.characterFolderPath,
-      location:       o.locationFolderPath,
-      event:          o.eventFolderPath,
-      item:           o.itemFolderPath,
-      reference:      o.referenceFolderPath,
-      chapter:        o.chapterFolderPath,
-      scene:          o.sceneFolderPath,
-      map:            o.mapFolderPath,
-      culture:        o.cultureFolderPath,
-      faction:        o.factionFolderPath,
-      economy:        o.economyFolderPath,
-      magicSystem:    o.magicSystemFolderPath,
-      group:          o.groupFolderPath,
-      compendiumEntry: o.compendiumFolderPath,
-      book:           o.bookFolderPath,
-      campaignSession: o.sessionsFolderPath,
-    };
-    const specificPath = pathMap[type];
+    if (!this.opts.enableCustomEntityFolders) return false;
+    const specificPath = this.path(this.overrideKeyFor(type));
     if (specificPath && specificPath.includes('{bookName}')) return true;
     // If no specific path is set, the root template fallback is used — check that too
-    if (!specificPath && o.storyRootFolderTemplate && o.storyRootFolderTemplate.includes('{bookName}')) return true;
+    const rootTemplate = this.path('storyRootFolderTemplate');
+    if (!specificPath && rootTemplate && rootTemplate.includes('{bookName}')) return true;
     return false;
+  }
+
+  /** The folder-path setting that governs a given entity type. */
+  private overrideKeyFor(type: EntityFolderType): keyof StoryFolderOverrides {
+    const keys: Record<EntityFolderType, keyof StoryFolderOverrides> = {
+      character:       'characterFolderPath',
+      location:        'locationFolderPath',
+      event:           'eventFolderPath',
+      item:            'itemFolderPath',
+      reference:       'referenceFolderPath',
+      chapter:         'chapterFolderPath',
+      scene:           'sceneFolderPath',
+      map:             'mapFolderPath',
+      culture:         'cultureFolderPath',
+      faction:         'factionFolderPath',
+      economy:         'economyFolderPath',
+      magicSystem:     'magicSystemFolderPath',
+      group:           'groupFolderPath',
+      compendiumEntry: 'compendiumFolderPath',
+      book:            'bookFolderPath',
+      campaignSession: 'sessionsFolderPath',
+    };
+    return keys[type];
+  }
+
+  /** Default subfolder name used under the story root when no path is configured. */
+  private defaultLeafFor(type: EntityFolderType): string {
+    const leaves: Record<EntityFolderType, string> = {
+      character:       'Characters',
+      location:        'Locations',
+      event:           'Events',
+      item:            'Items',
+      reference:       'References',
+      chapter:         'Chapters',
+      scene:           'Scenes',
+      map:             'Maps',
+      culture:         'Cultures',
+      faction:         'Factions',
+      economy:         'Economies',
+      magicSystem:     'MagicSystems',
+      group:           'Groups',
+      compendiumEntry: 'Compendium',
+      book:            'Books',
+      campaignSession: 'Sessions',
+    };
+    return leaves[type];
   }
 
   /** Sanitize the one-story base folder so it is vault-relative and never a leading slash. */
@@ -158,8 +225,9 @@ export class FolderResolver {
     const o = this.opts;
 
     if (o.enableCustomEntityFolders) {
-      if (o.storyRootFolderTemplate && o.storyRootFolderTemplate.trim()) {
-        return this.resolveTemplatePath(o.storyRootFolderTemplate);
+      const rootTemplate = this.path('storyRootFolderTemplate');
+      if (rootTemplate && rootTemplate.trim()) {
+        return this.resolveTemplatePath(rootTemplate);
       }
 
       const configuredPaths = this.getConfiguredEntityPaths()
@@ -183,30 +251,13 @@ export class FolderResolver {
     const o = this.opts;
 
     if (o.enableCustomEntityFolders) {
-      const root = o.storyRootFolderTemplate ? this.resolveTemplatePath(o.storyRootFolderTemplate, context) : '';
-      const prefer = (path?: string, fallbackLeaf?: string): string | undefined => {
-        if (path && path.trim()) return this.resolveTemplatePath(path, context);
-        if (root && fallbackLeaf) return normalizePath(`${root}/${fallbackLeaf}`);
-        return undefined;
-      };
+      const rootTemplate = this.path('storyRootFolderTemplate');
+      const root = rootTemplate ? this.resolveTemplatePath(rootTemplate, context) : '';
+      const configured = this.path(this.overrideKeyFor(type));
 
       let result: string | undefined;
-      if (type === 'character')   result = prefer(o.characterFolderPath,   'Characters');
-      else if (type === 'location')    result = prefer(o.locationFolderPath,    'Locations');
-      else if (type === 'event')       result = prefer(o.eventFolderPath,       'Events');
-      else if (type === 'item')        result = prefer(o.itemFolderPath,        'Items');
-      else if (type === 'reference')   result = prefer(o.referenceFolderPath,   'References');
-      else if (type === 'chapter')     result = prefer(o.chapterFolderPath,     'Chapters');
-      else if (type === 'scene')       result = prefer(o.sceneFolderPath,       'Scenes');
-      else if (type === 'map')         result = prefer(o.mapFolderPath,         'Maps');
-      else if (type === 'culture')     result = prefer(o.cultureFolderPath,     'Cultures');
-      else if (type === 'faction')     result = prefer(o.factionFolderPath,     'Factions');
-      else if (type === 'economy')     result = prefer(o.economyFolderPath,     'Economies');
-      else if (type === 'magicSystem') result = prefer(o.magicSystemFolderPath, 'MagicSystems');
-      else if (type === 'group')       result = prefer(o.groupFolderPath,       'Groups');
-      else if (type === 'compendiumEntry') result = prefer(o.compendiumFolderPath, 'Compendium');
-      else if (type === 'book')        result = prefer(o.bookFolderPath,        'Books');
-      else if (type === 'campaignSession') result = prefer(o.sessionsFolderPath, 'Sessions');
+      if (configured && configured.trim()) result = this.resolveTemplatePath(configured, context);
+      else if (root) result = normalizePath(`${root}/${this.defaultLeafFor(type)}`);
 
       // If custom folders are enabled but no path is configured, fall through to default behavior
       if (result) return result;

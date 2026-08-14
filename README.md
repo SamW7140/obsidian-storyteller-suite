@@ -168,10 +168,10 @@ Note: in One Story Mode, the dashboard intentionally hides the `New story` butto
 ## Customising the entity modals
 
 The Character and Item modals ship with every field the plugin knows about, which
-is more than most projects want. **Settings → Modals** turns individual sections
-off — cultures, economies, inventory, D&D stats, physical attributes and the rest.
-Hiding a section only stops it being drawn; nothing already saved is deleted, so
-turning one back on brings its values with it.
+is more than most projects want. **Settings → Modals** turns individual fields
+off: cultures, economies, inventory, D&D stats, physical attributes and the rest.
+Hiding a field only stops it being drawn; nothing already saved is deleted, so
+turning one back on brings its value with it.
 
 The same tab sets **default custom fields** per entity type. Name a field there
 and every newly created entity of that type starts with it ready to fill in.

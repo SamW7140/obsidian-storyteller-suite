@@ -11457,3 +11457,17 @@ body.mod-rtl .storyteller-group-members {
 .is-editing .sts-native-timeline-canvas {
   cursor: ew-resize;
 }
+
+/* Per-story folder overrides in the edit story modal. Indented and bounded so
+   a 17-field list reads as a subsection rather than dominating the dialog. */
+.storyteller-story-folder-overrides {
+    max-height: 40vh;
+    overflow-y: auto;
+    padding-left: 0.75rem;
+    border-left: 2px solid var(--background-modifier-border);
+}
+
+.storyteller-story-folder-overrides .setting-item {
+    padding-top: 0.4rem;
+    padding-bottom: 0.4rem;
+}

@@ -24,7 +24,7 @@ import { EntityCustomFieldsEditor } from './entity/EntityCustomFieldsEditor';
 import { EntityGroupSelector } from './entity/EntityGroupSelector';
 import { ResponsiveModal } from './ResponsiveModal';
 import { confirmWithModal } from './ui/ConfirmModal';
-import { isModalSectionHidden, seedDefaultCustomFields } from './EntityModalSections';
+import { isModalFieldVisible, seedDefaultCustomFields } from './entity/ModalFieldVisibility';
 
 export type PlotItemModalSubmitCallback = (item: PlotItem) => Promise<void>;
 export type PlotItemModalDeleteCallback = (item: PlotItem) => Promise<void>;
@@ -113,13 +113,10 @@ export class PlotItemModal extends ResponsiveModal {
         const { contentEl, footerEl } = this.createStructuredModalLayout();
         contentEl.createEl('h2', { text: this.isNew ? t('createItem') : `${t('edit')} ${this.item.name}` });
 
-        // Sections the user switched off in settings are skipped entirely.
+        // Fields the user switched off in settings are skipped entirely.
         // Values already saved on the item are left untouched.
-        const shows = (sectionId: string): boolean => !isModalSectionHidden(
-            this.plugin.settings.hiddenEntityModalSections,
-            'item',
-            sectionId
-        );
+        const shows = (fieldKey: string): boolean =>
+            isModalFieldVisible(this.plugin.settings.hiddenModalFields, 'item', fieldKey);
 
         // Auto-apply default template for new items
         if (this.isNew && !this.item.name) {
@@ -404,8 +401,11 @@ export class PlotItemModal extends ResponsiveModal {
 
 
         // --- Custom Fields ---
+        // The editor is always loaded, hidden or not: getFields() supplies the
+        // value written back on save, and skipping it would drop the item's
+        // existing custom fields.
+        this.customFieldsEditor.setFields(this.item.customFields);
         if (shows('customFields')) {
-            this.customFieldsEditor.setFields(this.item.customFields);
             this.customFieldsEditor.renderSection(contentEl);
         }
         if (shows('location')) new Setting(contentEl)
