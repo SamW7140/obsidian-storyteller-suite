@@ -1,6 +1,10 @@
  
 import { App, Setting, Notice, ButtonComponent, parseYaml } from 'obsidian';
 import { Event } from '../types';
+
+/** Colours the picker opens on when the event has made no choice of its own. */
+const DEFAULT_EVENT_COLOR = '#7c3aed';
+const MILESTONE_GOLD = '#d9a520';
 import StorytellerSuitePlugin from '../main';
 import { parseSectionsFromMarkdown } from '../yaml/EntitySections';
 import { t } from '../i18n/strings';
@@ -252,6 +256,25 @@ export class EventModal extends ResponsiveModal {
             .addToggle(toggle => toggle
                 .setValue(this.event.isMilestone || false)
                 .onChange(value => { this.event.isMilestone = value; }));
+
+        // Left unset, the event takes its lane's colour, or the milestone gold.
+        // Clearing it has to be possible, hence the reset button: a colour
+        // picker alone has no way back to "no choice made".
+        const colorSetting = new Setting(contentEl)
+            .setName('Timeline colour')
+            .setDesc('Overrides the lane colour, and the milestone gold, on the timeline')
+            .addColorPicker(picker => picker
+                // Opens on whatever the event would have drawn as anyway, so
+                // the picker starts from the current appearance.
+                .setValue(this.event.color || (this.event.isMilestone ? MILESTONE_GOLD : DEFAULT_EVENT_COLOR))
+                .onChange(value => { this.event.color = value; }));
+        colorSetting.addExtraButton(button => button
+            .setIcon('rotate-ccw')
+            .setTooltip('Use the default colour')
+            .onClick(() => {
+                this.event.color = undefined;
+                this.onOpen();
+            }));
 
         new Setting(contentEl)
             .setName('Progress')

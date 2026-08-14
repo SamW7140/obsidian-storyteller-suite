@@ -68,12 +68,21 @@ interface NativeItem {
     labelSuppressed?: boolean;
     /** Date was written loosely, so the chip is outlined rather than solid. */
     approximate?: boolean;
+    /**
+     * Colour the user actually chose, from the event itself or from an
+     * explicitly coloured track, group or fork. Undefined when the colour in
+     * play is only a palette default, which is what lets milestone gold apply
+     * without a deliberate choice being overridden.
+     */
+    customColor?: string;
 }
 
 interface Lane {
     id: string;
     label: string;
     color: string;
+    /** True when `color` was chosen by the user, not taken from the palette. */
+    explicitColor?: boolean;
     items: NativeItem[];
     top: number;
     height: number;
@@ -427,7 +436,7 @@ export class NativeTimelineRenderer {
             return parent ? 1 + depthOf(parent, seen) : 1;
         };
         forks.forEach((fork, laneIndex) => {
-            const lane: Lane = { id: `fork:${fork.id}`, label: fork.name, color: fork.color || this.palette[laneIndex % this.palette.length], items: [], top: 0, height: 0, branchDepth: depthOf(fork) };
+            const lane: Lane = { id: `fork:${fork.id}`, label: fork.name, color: fork.color || this.palette[laneIndex % this.palette.length], explicitColor: !!fork.color, items: [], top: 0, height: 0, branchDepth: depthOf(fork) };
             const divergence = this.parseDate(fork.divergenceDate);
             main.filter(event => this.eventStart(event) <= divergence).forEach((event, index) => lane.items.push({ ...this.makeItem(event, index, lane, 0), forkId: fork.id, inherited: true }));
             events.filter(event => (fork.forkEvents || []).includes(this.eventKey(event))).forEach((event, index) => lane.items.push({ ...this.makeItem(event, index, lane, 0), forkId: fork.id }));
@@ -436,12 +445,23 @@ export class NativeTimelineRenderer {
         return lanes;
     }
 
-    private makeItem(event: Event, eventIndex: number, lane: Pick<Lane, 'id' | 'label' | 'color'>, duplicateIndex: number): NativeItem {
+    private makeItem(event: Event, eventIndex: number, lane: Pick<Lane, 'id' | 'label' | 'color' | 'explicitColor'>, duplicateIndex: number): NativeItem {
         const rangeParts = event.dateTime?.split(/\s+(?:to|through|until)\s+/i) || [];
         const start = rangeParts[0] ? this.parseDate(rangeParts[0]) : NaN;
         const explicitEnd = rangeParts[1] ? this.parseDate(rangeParts[1]) : NaN;
         const end = Number.isFinite(explicitEnd) ? explicitEnd : (this.options.ganttMode && !event.isMilestone ? start + this.options.defaultGanttDuration * DAY_MS : start);
-        return { id: `${this.eventKey(event)}:${lane.id}:${duplicateIndex}`, event, eventIndex, start, end: Math.max(start, end), laneId: lane.id, laneLabel: lane.label, laneColor: lane.color, row: 0, approximate: this.isApproximate(event) };
+        // The event's own colour beats the lane's, and only a deliberately
+        // chosen lane colour counts; a palette default must not displace the
+        // milestone gold.
+        const customColor = this.normalizeColor(event.color) || (lane.explicitColor ? lane.color : undefined);
+        return { id: `${this.eventKey(event)}:${lane.id}:${duplicateIndex}`, event, eventIndex, start, end: Math.max(start, end), laneId: lane.id, laneLabel: lane.label, laneColor: lane.color, row: 0, approximate: this.isApproximate(event), customColor };
+    }
+
+    /** A usable colour string, or undefined when the value is blank or junk. */
+    private normalizeColor(value: string | undefined): string | undefined {
+        const trimmed = value?.trim();
+        if (!trimmed) return undefined;
+        return /^#[0-9a-f]{3}([0-9a-f]{3})?$/i.test(trimmed) ? trimmed : undefined;
     }
 
     /**
@@ -522,7 +542,7 @@ export class NativeTimelineRenderer {
         this.scrollTop = Math.min(this.scrollTop, maxScroll);
     }
 
-    private groupTargets(event: Event): Array<{ id: string; label: string; color: string }> {
+    private groupTargets(event: Event): Array<{ id: string; label: string; color: string; explicitColor?: boolean }> {
         const mode = this.options.groupMode;
         if (mode === 'character') {
             const chars = event.characters?.length ? Array.from(new Set(event.characters)) : ['No character'];
@@ -535,11 +555,11 @@ export class NativeTimelineRenderer {
         if (mode === 'group') {
             const id = event.groups?.[0] || '__ungrouped__';
             const group = this.plugin.getGroups().find(candidate => candidate.id === id || candidate.name === id);
-            return [{ id: `group:${id}`, label: group?.name || (id === '__ungrouped__' ? 'Ungrouped' : id), color: group?.color || this.colorFor(id) }];
+            return [{ id: `group:${id}`, label: group?.name || (id === '__ungrouped__' ? 'Ungrouped' : id), color: group?.color || this.colorFor(id), explicitColor: !!group?.color }];
         }
         if (mode === 'track') {
             const track = this.matchTrack(event);
-            return [{ id: `track:${track?.id || '__unassigned__'}`, label: track?.name || 'Unassigned', color: track?.color || this.colorFor(track?.id || 'unassigned') }];
+            return [{ id: `track:${track?.id || '__unassigned__'}`, label: track?.name || 'Unassigned', color: track?.color || this.colorFor(track?.id || 'unassigned'), explicitColor: !!track?.color }];
         }
         return [{ id: '__timeline__', label: 'Timeline', color: this.css('--interactive-accent', '#7c3aed') }];
     }
@@ -1027,7 +1047,8 @@ export class NativeTimelineRenderer {
         const rect = item.rect!;
         ctx.save();
         ctx.globalAlpha = item.inherited ? 0.45 : 1;
-        const accent = item === this.selected ? this.css('--interactive-accent', '#8b5cf6') : item.laneColor;
+        const accent = item.customColor
+            || (item === this.selected ? this.css('--interactive-accent', '#8b5cf6') : item.laneColor);
         if (isPoint) {
             ctx.fillStyle = this.css('--background-secondary', '#1f2937');
             this.roundedRect(ctx, rect.x, rect.y, rect.width, rect.height, 3);
@@ -1043,9 +1064,11 @@ export class NativeTimelineRenderer {
             if (item.event.isMilestone) {
                 this.starPath(ctx, markerX, markerY, 6.5);
                 ctx.fill();
-                ctx.strokeStyle = this.css('--sts-timeline-milestone-edge', MILESTONE_GOLD_EDGE);
-                ctx.lineWidth = 1;
-                ctx.stroke();
+                if (!item.customColor) {
+                    ctx.strokeStyle = this.css('--sts-timeline-milestone-edge', MILESTONE_GOLD_EDGE);
+                    ctx.lineWidth = 1;
+                    ctx.stroke();
+                }
             } else {
                 ctx.beginPath();
                 ctx.arc(markerX, markerY, 4, 0, Math.PI * 2);
@@ -1115,6 +1138,7 @@ export class NativeTimelineRenderer {
      * Selection still reads through the chip border.
      */
     private markerColor(item: NativeItem): string {
+        if (item.customColor) return item.customColor;
         if (item.event.isMilestone) return this.css('--sts-timeline-milestone', MILESTONE_GOLD);
         return item === this.selected ? this.css('--interactive-accent', '#8b5cf6') : item.laneColor;
     }
@@ -1125,11 +1149,14 @@ export class NativeTimelineRenderer {
         if (item.event.isMilestone) {
             this.starPath(ctx, x, y, 7.5);
             ctx.fill();
-            // A thin darker rim keeps the points legible against a light theme
-            // or a pale era band behind them.
-            ctx.strokeStyle = this.css('--sts-timeline-milestone-edge', MILESTONE_GOLD_EDGE);
-            ctx.lineWidth = 1;
-            ctx.stroke();
+            // A thin darker rim keeps the gold's points legible against a light
+            // theme or a pale era band. A chosen colour is left exactly as
+            // chosen, so no rim there.
+            if (!item.customColor) {
+                ctx.strokeStyle = this.css('--sts-timeline-milestone-edge', MILESTONE_GOLD_EDGE);
+                ctx.lineWidth = 1;
+                ctx.stroke();
+            }
         } else {
             ctx.beginPath(); ctx.arc(x, y, 5, 0, Math.PI * 2); ctx.fill();
         }

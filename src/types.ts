@@ -816,7 +816,13 @@ export interface Event {
     
     /** Current status of the event (e.g., "Upcoming", "Completed", "Ongoing") */
     status?: string;
-    
+
+    /**
+     * Custom colour for this event on the timeline, as a hex string.
+     * Overrides the lane colour, and the milestone gold, when set.
+     */
+    color?: string;
+
     /** Path to a representative image of the event within the vault */
     profileImagePath?: string;
     
