@@ -60,6 +60,12 @@ interface NativeItem {
     rect?: DOMRect;
     forkId?: string;
     inherited?: boolean;
+    /**
+     * Set when the chip has no room to draw without covering its neighbour.
+     * The event still renders as a marker on the axis, so it is never silently
+     * dropped, but the label that would be unreadable is left out.
+     */
+    labelSuppressed?: boolean;
 }
 
 interface Lane {
@@ -88,6 +94,13 @@ const SIDEBAR_WIDTH = 174;
 const BASE_AXIS_HEIGHT = 42;
 const CALENDAR_BAND_HEIGHT = 16;
 const MAX_SPAN = 2_000_000 * YEAR_MS;
+const MAX_CHIP_WIDTH = 210;
+const MIN_CHIP_WIDTH = 88;
+const MIN_CHRONOLOGY_CHIP_WIDTH = 92;
+/** Breathing room kept between two chips on the same row. */
+const CHIP_GAP = 8;
+/** A wheel notch in line mode is worth roughly this many pixels. */
+const WHEEL_LINE_HEIGHT = 16;
 
 export class NativeTimelineRenderer {
     private readonly app: App;
@@ -406,20 +419,40 @@ export class NativeTimelineRenderer {
         return { id: `${this.eventKey(event)}:${lane.id}:${duplicateIndex}`, event, eventIndex, start, end: Math.max(start, end), laneId: lane.id, laneLabel: lane.label, laneColor: lane.color, row: 0 };
     }
 
+    /**
+     * Width the chip for this item will actually occupy when drawn.
+     *
+     * Layout and draw have to agree on this. Reserving a flat width for every
+     * event while drawing a measured one is what lets a long label sit on top
+     * of its neighbour, so both paths read the answer from here.
+     */
+    private chipWidth(ctx: CanvasRenderingContext2D, item: NativeItem, minimum: number): number {
+        ctx.font = `11px ${this.css('--font-interface', 'sans-serif')}`;
+        const markers = `${item.event.narrativeMarkers?.isFlashback ? 'FB ' : ''}${item.event.narrativeMarkers?.isFlashforward ? 'FF ' : ''}`;
+        return Math.max(minimum, Math.min(MAX_CHIP_WIDTH, ctx.measureText(markers + item.event.name).width + 34));
+    }
+
     private layoutRows(): void {
         const rowHeight = this.rowHeight();
         const plotWidth = Math.max(1, (this.root?.clientWidth || 900) - SIDEBAR_WIDTH);
-        const visualReservation = (this.viewEnd - this.viewStart) * (210 / plotWidth);
+        const pxToTime = (this.viewEnd - this.viewStart) / plotWidth;
+        const ctx = this.ctx;
         const axisHeight = this.axisHeight();
         let top = axisHeight;
         this.lanes.forEach(lane => {
             lane.items.sort((a, b) => a.start - b.start || a.end - b.end);
             const rowEnds: number[] = [];
             lane.items.forEach(item => {
+                // Reserve the space this label really needs. Falling back to the
+                // old flat estimate only matters before the canvas context
+                // exists, when nothing is on screen to collide yet.
+                const width = ctx ? this.chipWidth(ctx, item, MIN_CHIP_WIDTH) : MAX_CHIP_WIDTH;
+                const reservation = (width + CHIP_GAP) * pxToTime;
                 let row = 0;
                 if (this.options.stackEnabled) while (row < rowEnds.length && rowEnds[row] > item.start) row++;
                 item.row = row;
-                rowEnds[row] = Math.max(item.end, item.start + visualReservation);
+                item.labelSuppressed = false;
+                rowEnds[row] = Math.max(item.end, item.start + reservation);
             });
             lane.top = top;
             lane.height = Math.max(rowHeight + 12, rowEnds.length * rowHeight + 12);
@@ -664,9 +697,7 @@ export class NativeTimelineRenderer {
             const y = top + 7 + item.row * rowHeight;
             const itemHeight = rowHeight - 7;
             const isPoint = Math.abs(x2 - x1) < 3;
-            ctx.font = `11px ${this.css('--font-interface', 'sans-serif')}`;
-            const markers = `${item.event.narrativeMarkers?.isFlashback ? 'FB ' : ''}${item.event.narrativeMarkers?.isFlashforward ? 'FF ' : ''}`;
-            const chipWidth = Math.max(88, Math.min(210, ctx.measureText(markers + item.event.name).width + 34));
+            const chipWidth = this.chipWidth(ctx, item, MIN_CHIP_WIDTH);
             const itemWidth = isPoint ? chipWidth : Math.max(24, x2 - x1);
             const x = isPoint ? x1 - 7 : x1;
             item.rect = new DOMRect(x, y, itemWidth, itemHeight);
@@ -690,6 +721,9 @@ export class NativeTimelineRenderer {
         ctx.beginPath(); ctx.moveTo(SIDEBAR_WIDTH, baselineY); ctx.lineTo(width, baselineY); ctx.stroke();
 
         const rowHeight = this.rowHeight();
+        // Right edge of the last chip drawn on each row, so a chip that would
+        // land on top of its neighbour can stand down.
+        const rowRightEdges: number[] = [];
         const startIndex = this.lowerBound(lane.items, this.viewStart);
         for (let i = Math.max(0, startIndex - 1); i < lane.items.length; i++) {
             const item = lane.items[i];
@@ -698,16 +732,37 @@ export class NativeTimelineRenderer {
             const pointX = this.timeToX(item.start, width);
             const endX = this.timeToX(item.end, width);
             const chipY = top + 34 + item.row * rowHeight;
-            const markers = `${item.event.narrativeMarkers?.isFlashback ? 'FB ' : ''}${item.event.narrativeMarkers?.isFlashforward ? 'FF ' : ''}`;
-            ctx.font = `11px ${this.css('--font-interface', 'sans-serif')}`;
-            const chipWidth = Math.max(92, Math.min(210, ctx.measureText(markers + item.event.name).width + 34));
+            const chipWidth = this.chipWidth(ctx, item, MIN_CHRONOLOGY_CHIP_WIDTH);
             const chipHeight = rowHeight - 7;
             const chipX = Math.min(Math.max(SIDEBAR_WIDTH + 4, pointX + 9), width - chipWidth - 4);
-            item.rect = new DOMRect(chipX, chipY, chipWidth, chipHeight);
+
+            // Two events close enough together to overlap would otherwise print
+            // one label on top of the other. Whoever got here first keeps the
+            // chip; the rest stay on the axis as markers, which reads as a dense
+            // cluster rather than as a smear of text.
+            const rowRight = rowRightEdges[item.row];
+            const collides = rowRight !== undefined && chipX < rowRight + CHIP_GAP;
+            item.labelSuppressed = collides;
+
+            // Hit target follows what was drawn. A suppressed item answers to
+            // its marker, so it stays clickable without claiming empty space
+            // where its chip would have been.
+            item.rect = collides
+                ? new DOMRect(pointX - 7, baselineY - 7, 14, 14)
+                : new DOMRect(chipX, chipY, chipWidth, chipHeight);
             this.visibleItems.push(item);
+
+            if (collides) {
+                this.drawPointMarker(ctx, pointX, baselineY, item);
+                continue;
+            }
+            rowRightEdges[item.row] = chipX + chipWidth;
 
             ctx.strokeStyle = item.laneColor;
             ctx.globalAlpha = item.inherited ? 0.45 : 0.8;
+            ctx.lineWidth = 1;
+            // Stem: down from the axis marker, then across to the chip. The
+            // elbow is what will carry branch lines once forks hang off it.
             ctx.beginPath(); ctx.moveTo(pointX, baselineY); ctx.lineTo(pointX, chipY + chipHeight / 2); ctx.lineTo(chipX, chipY + chipHeight / 2); ctx.stroke();
             if (endX - pointX > 3) {
                 ctx.beginPath(); ctx.moveTo(pointX, baselineY); ctx.lineTo(endX, baselineY); ctx.stroke();
@@ -1113,35 +1168,73 @@ export class NativeTimelineRenderer {
         }
     }
 
+    /**
+     * Wheel deltas in pixels, whatever unit the device reports them in.
+     *
+     * A mouse that reports lines sends about 3 per notch where a trackpad sends
+     * about 100. Reading deltaY raw made the same gesture roughly thirty times
+     * weaker on one device than the other.
+     */
+    private wheelPixels(value: number, mode: number, pageSize: number): number {
+        if (mode === WheelEvent.DOM_DELTA_LINE) return value * WHEEL_LINE_HEIGHT;
+        if (mode === WheelEvent.DOM_DELTA_PAGE) return value * pageSize;
+        return value;
+    }
+
+    private panBy(pixels: number, plotSize: number): void {
+        const delta = pixels / plotSize * (this.viewEnd - this.viewStart);
+        this.viewStart += delta;
+        this.viewEnd += delta;
+    }
+
+    private zoomAt(pixels: number, pointer: number, plotSize: number): void {
+        const anchor = this.viewStart + pointer / plotSize * (this.viewEnd - this.viewStart);
+        const factor = Math.exp(pixels * 0.0015);
+        const span = Math.max(this.minimumSpan(), Math.min(MAX_SPAN, (this.viewEnd - this.viewStart) * factor));
+        const ratio = (anchor - this.viewStart) / (this.viewEnd - this.viewStart);
+        this.viewStart = anchor - span * ratio;
+        this.viewEnd = this.viewStart + span;
+    }
+
+    /**
+     * Wheel zooms at the cursor, shift+wheel pans along time.
+     *
+     * Lane scrolling stays reachable two ways when the lanes overflow: alt+wheel
+     * anywhere, or an ordinary wheel over the lane sidebar, where zooming the
+     * time axis would not be what anyone meant.
+     */
     private onWheel(event: WheelEvent): void {
         if (!this.root) return;
         event.preventDefault();
-        if (event.ctrlKey || event.metaKey) {
-            const vertical = !this.options.ganttMode && this.options.timelineOrientation === 'vertical';
-            const plotSize = vertical ? Math.max(1, this.root.clientHeight - 52) : Math.max(1, this.root.clientWidth - SIDEBAR_WIDTH);
-            const pointer = vertical ? Math.max(0, event.offsetY - 28) : Math.max(0, event.offsetX - SIDEBAR_WIDTH);
-            const anchor = this.viewStart + pointer / plotSize * (this.viewEnd - this.viewStart);
-            const factor = Math.exp(event.deltaY * 0.0015);
-            const span = Math.max(this.minimumSpan(), Math.min(MAX_SPAN, (this.viewEnd - this.viewStart) * factor));
-            const ratio = (anchor - this.viewStart) / (this.viewEnd - this.viewStart);
-            this.viewStart = anchor - span * ratio; this.viewEnd = this.viewStart + span;
-        } else if (!this.options.ganttMode && this.options.timelineOrientation === 'vertical') {
-            const delta = event.deltaY / 900 * (this.viewEnd - this.viewStart);
-            this.viewStart += delta; this.viewEnd += delta;
+        const vertical = !this.options.ganttMode && this.options.timelineOrientation === 'vertical';
+        const plotSize = vertical
+            ? Math.max(1, this.root.clientHeight - 52)
+            : Math.max(1, this.root.clientWidth - SIDEBAR_WIDTH);
+        const deltaY = this.wheelPixels(event.deltaY, event.deltaMode, plotSize);
+        const deltaX = this.wheelPixels(event.deltaX, event.deltaMode, plotSize);
+
+        const overSidebar = !vertical && event.offsetX < SIDEBAR_WIDTH;
+        const canScrollLanes = this.maxLaneScroll() > 0;
+        if (canScrollLanes && (event.altKey || overSidebar)) {
+            this.scrollTop = Math.max(0, Math.min(this.maxLaneScroll(), this.scrollTop + deltaY));
+            this.scheduleDraw();
+            return;
+        }
+
+        // A horizontal wheel or trackpad swipe reads as panning on any axis.
+        if (Math.abs(deltaX) > Math.abs(deltaY)) {
+            this.panBy(deltaX, plotSize);
+            this.scheduleDraw();
+            return;
+        }
+
+        if (event.shiftKey) {
+            this.panBy(deltaY, plotSize);
         } else {
-            const verticalWheel = Math.abs(event.deltaY) >= Math.abs(event.deltaX);
-            const canScrollLanes = this.maxLaneScroll() > 0;
-            if (!event.shiftKey && verticalWheel && canScrollLanes) {
-                const before = this.scrollTop;
-                this.scrollTop = Math.max(0, Math.min(this.maxLaneScroll(), this.scrollTop + event.deltaY));
-                if (this.scrollTop !== before) {
-                    this.scheduleDraw();
-                    return;
-                }
-            }
-            const wheelDelta = Math.abs(event.deltaX) > Math.abs(event.deltaY) ? event.deltaX : event.deltaY;
-            const delta = wheelDelta / 900 * (this.viewEnd - this.viewStart);
-            this.viewStart += delta; this.viewEnd += delta;
+            const pointer = vertical
+                ? Math.max(0, event.offsetY - 28)
+                : Math.max(0, event.offsetX - SIDEBAR_WIDTH);
+            this.zoomAt(deltaY, pointer, plotSize);
         }
         this.scheduleDraw();
     }
