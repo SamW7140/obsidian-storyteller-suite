@@ -993,7 +993,14 @@ export class DashboardView extends ItemView {
             h.classList.toggle('active', !!isActive);
             h.setAttribute('aria-selected', isActive ? 'true' : 'false');
             h.setAttribute('tabindex', isActive ? '0' : '-1');
-            h.setCssStyles({ background: isActive ? 'var(--background-modifier-hover)' : 'transparent' });
+            // The .active class paints the accent background. Setting one
+            // inline here beat that rule, so the active tab drew the theme's
+            // hover colour while keeping the class's on-accent text colour,
+            // which is unreadable wherever those two are close. Clear it
+            // outright rather than skipping the write, so tabs styled by an
+            // older build recover on the next sync.
+            h.style.removeProperty('background');
+            h.style.removeProperty('background-color');
             h.setCssStyles({ outline: 'none' });
         });
     }
