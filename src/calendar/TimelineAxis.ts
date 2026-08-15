@@ -77,6 +77,104 @@ function chooseLevel(cal: CalendarSystem, spanDays: number): TickLevel {
   return 'day';
 }
 
+/**
+ * Smallest on-screen width, in pixels, a snap unit may have. Below this the
+ * boundaries are closer together than the user can aim, so the next coarser
+ * unit is chosen instead.
+ */
+const MIN_SNAP_PX = 4;
+
+/**
+ * Pick the granularity drag edits should snap to.
+ *
+ * Deliberately *not* the same as {@link generateTicks}'s label level. Labels
+ * thin out to whatever reads well, so a three-year view labels years — snapping
+ * to years there would let an event land only on new year's day. This instead
+ * takes the finest unit that is still at least {@link MIN_SNAP_PX} wide on
+ * screen. Every unit width comes from the calendar (`normalYearLength`,
+ * `months.length`, `unitsPerDay`), so a 40-day fantasy month snaps like a
+ * 40-day month, not like a Gregorian one.
+ */
+export function chooseSnapLevel(cal: CalendarSystem, view: AxisView): TickLevel {
+  const spanDays = view.endDay - view.startDay;
+  if (spanDays <= 0) return 'day';
+  const minDays = (spanDays / Math.max(1, view.widthPx)) * MIN_SNAP_PX;
+  if (cal.baseUnit === 'minute' && cal.unitsPerDay > 1) {
+    if (1 / cal.unitsPerDay >= minDays) return 'minute';
+    if (60 / cal.unitsPerDay >= minDays) return 'hour';
+  }
+  if (1 >= minDays) return 'day';
+  if (normalYearLength(cal) / cal.months.length >= minDays) return 'month';
+  return 'year';
+}
+
+/**
+ * Round an absolute day to the nearest real boundary of `level` in `cal`.
+ *
+ * Months and years cannot be snapped by modulus: `monthLength` varies, leap
+ * rules add days, and intercalary months insert whole periods, so there is no
+ * fixed unit to divide by. Instead this locates the period containing the day
+ * and compares its two ends, which is exact for any calendar and stays O(1) in
+ * the pointermove hot path.
+ */
+export function snapDay(cal: CalendarSystem, absoluteDay: number, level: TickLevel): number {
+  if (level === 'minute' || level === 'hour') {
+    const stepUnits = level === 'minute' ? 1 : 60;
+    const units = absoluteDay * cal.unitsPerDay;
+    return (Math.round(units / stepUnits) * stepUnits) / cal.unitsPerDay;
+  }
+  if (level === 'day') return Math.round(absoluteDay);
+
+  const date = fromAbsolute(cal, { absoluteDay: Math.floor(absoluteDay) });
+  let lower: number;
+  let upper: number;
+  if (level === 'month') {
+    lower = toAbsolute(cal, { year: date.year, month: date.month, day: 1 }).absoluteDay;
+    const next = date.month + 1;
+    upper = next < monthsInYear(cal, date.year).length
+      ? toAbsolute(cal, { year: date.year, month: next, day: 1 }).absoluteDay
+      : toAbsolute(cal, { year: date.year + 1, month: 0, day: 1 }).absoluteDay;
+  } else {
+    lower = toAbsolute(cal, { year: date.year, month: 0, day: 1 }).absoluteDay;
+    upper = toAbsolute(cal, { year: date.year + 1, month: 0, day: 1 }).absoluteDay;
+  }
+  return absoluteDay - lower <= upper - absoluteDay ? lower : upper;
+}
+
+/**
+ * The boundary one snap unit away from `absoluteDay` in `direction` (±1).
+ *
+ * Used by keyboard nudging, where "one month later" has to mean the next month
+ * in this calendar rather than a fixed number of days.
+ */
+export function stepDay(
+  cal: CalendarSystem,
+  absoluteDay: number,
+  level: TickLevel,
+  direction: 1 | -1,
+): number {
+  const snapped = snapDay(cal, absoluteDay, level);
+  if (level === 'minute' || level === 'hour') {
+    return snapped + (direction * (level === 'minute' ? 1 : 60)) / cal.unitsPerDay;
+  }
+  if (level === 'day') return snapped + direction;
+
+  const date = fromAbsolute(cal, { absoluteDay: snapped });
+  if (level === 'year') {
+    return toAbsolute(cal, { year: date.year + direction, month: 0, day: 1 }).absoluteDay;
+  }
+  const target = date.month + direction;
+  if (target < 0) {
+    const previous = date.year - 1;
+    const months = monthsInYear(cal, previous);
+    return toAbsolute(cal, { year: previous, month: months.length - 1, day: 1 }).absoluteDay;
+  }
+  if (target >= monthsInYear(cal, date.year).length) {
+    return toAbsolute(cal, { year: date.year + 1, month: 0, day: 1 }).absoluteDay;
+  }
+  return toAbsolute(cal, { year: date.year, month: target, day: 1 }).absoluteDay;
+}
+
 function yearLabel(cal: CalendarSystem, year: number): string {
   return cal.epochLabel ? `${year} ${cal.epochLabel}` : String(year);
 }

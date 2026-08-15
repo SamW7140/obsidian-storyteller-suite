@@ -10,7 +10,8 @@ import { GREGORIAN_CALENDAR } from '../calendar/builtins';
 import { parseToAbsoluteDay, formatAbsoluteDay } from '../calendar/CalendarDateText';
 import { daysInYear, fromAbsolute, monthsInYear, normalYearLength, toAbsolute } from '../calendar/CalendarEngine';
 import type { CalendarSystem } from '../calendar/types';
-import { generateTicks } from '../calendar/TimelineAxis';
+import { chooseSnapLevel, generateTicks, snapDay, stepDay } from '../calendar/TimelineAxis';
+import type { AxisView, TickLevel } from '../calendar/TimelineAxis';
 
 export interface TimelineRendererOptions {
     ganttMode?: boolean;
@@ -1635,7 +1636,9 @@ export class NativeTimelineRenderer {
     private onKeyDown(event: KeyboardEvent): void {
         if (!this.selected || !this.options.editMode || !['ArrowLeft', 'ArrowRight'].includes(event.key)) return;
         event.preventDefault();
-        const delta = (event.key === 'ArrowLeft' ? -1 : 1) * this.snapUnit();
+        // Step the start, then shift the end by the same amount so the event
+        // keeps its duration even when the calendar's units are uneven.
+        const delta = this.step(this.selected.start, event.key === 'ArrowLeft' ? -1 : 1) - this.selected.start;
         this.selected.start += delta; this.selected.end += delta; this.scheduleDraw();
     }
 
@@ -1743,9 +1746,39 @@ export class NativeTimelineRenderer {
     private eventKey(event: Event): string { return String(event.id || event.name); }
     private timeToX(time: number, width: number): number { return SIDEBAR_WIDTH + (time - this.viewStart) / (this.viewEnd - this.viewStart) * Math.max(1, width - SIDEBAR_WIDTH); }
     private rowHeight(): number { return Math.round(24 + (100 - this.options.density) * 0.16); }
-    private snapUnit(): number { const span = this.viewEnd - this.viewStart; return span < DAY_MS * 4 ? 60_000 : span < DAY_MS * 60 ? DAY_MS : 30 * DAY_MS; }
     private minimumSpan(): number { return this.calendarRegistry.getActiveCalendar().baseUnit === 'minute' ? 60_000 : DAY_MS; }
-    private snap(value: number): number { const unit = this.snapUnit(); return Math.round(value / unit) * unit; }
+
+    /** The visible window expressed in the shared absolute-day space. */
+    private axisView(): AxisView {
+        const vertical = !this.options.ganttMode && this.options.timelineOrientation === 'vertical';
+        const size = !this.root ? 900
+            : vertical ? Math.max(1, this.root.clientHeight - 52)
+            : Math.max(1, this.root.clientWidth - SIDEBAR_WIDTH);
+        const epoch = this.unixEpochAbsoluteDay();
+        return { startDay: this.viewStart / DAY_MS + epoch, endDay: this.viewEnd / DAY_MS + epoch, widthPx: size };
+    }
+
+    private snapLevel(): TickLevel {
+        return chooseSnapLevel(this.calendarRegistry.getActiveCalendar(), this.axisView());
+    }
+
+    /**
+     * Round an edit to the nearest boundary of the active calendar. Times are
+     * carried as milliseconds here but calendars only speak absolute days, so
+     * the round trip goes through {@link unixEpochAbsoluteDay}.
+     */
+    private snap(value: number): number {
+        const epoch = this.unixEpochAbsoluteDay();
+        const snapped = snapDay(this.calendarRegistry.getActiveCalendar(), value / DAY_MS + epoch, this.snapLevel());
+        return (snapped - epoch) * DAY_MS;
+    }
+
+    /** One snap unit away from `value`, in this calendar rather than in fixed milliseconds. */
+    private step(value: number, direction: 1 | -1): number {
+        const epoch = this.unixEpochAbsoluteDay();
+        const stepped = stepDay(this.calendarRegistry.getActiveCalendar(), value / DAY_MS + epoch, this.snapLevel(), direction);
+        return (stepped - epoch) * DAY_MS;
+    }
     private formatEditDate(value: number): string {
         const calendar = this.calendarRegistry.getActiveCalendar();
         if (calendar.id !== GREGORIAN_CALENDAR.id) return formatAbsoluteDay(value / DAY_MS + this.unixEpochAbsoluteDay(), calendar, calendar.baseUnit === 'minute' ? 'time' : 'day');

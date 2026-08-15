@@ -3,9 +3,12 @@ import {
   projectDay,
   unprojectPx,
   generateTicks,
+  chooseSnapLevel,
+  snapDay,
+  stepDay,
   type AxisView,
 } from '../../src/calendar/TimelineAxis';
-import { toAbsolute } from '../../src/calendar/CalendarEngine';
+import { fromAbsolute, toAbsolute } from '../../src/calendar/CalendarEngine';
 import { GREGORIAN_CALENDAR } from '../../src/calendar/builtins';
 import type { CalendarSystem } from '../../src/calendar/types';
 import { CALENDAR_SCHEMA_VERSION } from '../../src/calendar/types';
@@ -173,5 +176,151 @@ describe('TimelineAxis — custom-calendar ticks', () => {
     const ticks = generateTicks(FANTASY, view);
     expect(ticks[0].label).toBe('Frost 7');
     expect(ticks.find(tick => tick.label === 'Bloom 1')).toBeDefined();
+  });
+});
+
+describe('TimelineAxis — snap resolution', () => {
+  const dayOf = (y: number, m: number, d: number) =>
+    toAbsolute(G, { year: y, month: m - 1, day: d }).absoluteDay;
+
+  // Uneven months plus a leap rule, so nothing here can pass by assuming a
+  // fixed unit length.
+  const UNEVEN: CalendarSystem = {
+    schemaVersion: CALENDAR_SCHEMA_VERSION,
+    id: 'axis-uneven',
+    name: 'Uneven',
+    baseUnit: 'day',
+    unitsPerDay: 1,
+    epochAbsoluteDay: 0,
+    months: [
+      { name: 'Short', days: 7 },
+      { name: 'Long', days: 33 },
+      { name: 'Middling', days: 20 },
+    ],
+    leapRule: { everyYears: 4, monthIndex: 0, extraDays: 1 },
+  };
+
+  describe('chooseSnapLevel', () => {
+    it('snaps by day inside a single month', () => {
+      const view: AxisView = { startDay: dayOf(2024, 3, 1), endDay: dayOf(2024, 3, 20), widthPx: 600 };
+      expect(chooseSnapLevel(G, view)).toBe('day');
+    });
+
+    it('does not follow the axis up to year level just because the labels did', () => {
+      const view: AxisView = { startDay: dayOf(2020, 1, 1), endDay: dayOf(2024, 1, 1), widthPx: 1000 };
+      expect(generateTicks(G, view).every(t => t.level === 'year')).toBe(true);
+      // Matching the labels would let an event land only on Jan 1.
+      expect(chooseSnapLevel(G, view)).toBe('month');
+    });
+
+    it('falls back to months once days are narrower than the cursor', () => {
+      const view: AxisView = { startDay: dayOf(1990, 1, 1), endDay: dayOf(2000, 1, 1), widthPx: 900 };
+      expect(chooseSnapLevel(G, view)).toBe('month');
+    });
+
+    it('falls back to years for a very long view', () => {
+      const view: AxisView = { startDay: dayOf(0, 1, 1), endDay: dayOf(5000, 1, 1), widthPx: 900 };
+      expect(chooseSnapLevel(G, view)).toBe('year');
+    });
+
+    it('reads unit widths off the calendar, so identical views differ by calendar', () => {
+      const base = { ...UNEVEN, leapRule: undefined };
+      const tiny: CalendarSystem = { ...base, months: [{ name: 'A', days: 3 }, { name: 'B', days: 3 }] };
+      const huge: CalendarSystem = { ...base, months: [{ name: 'A', days: 500 }, { name: 'B', days: 500 }] };
+      const view: AxisView = { startDay: 0, endDay: 900, widthPx: 900 };
+      // Same window, same pixels. A 3-day month is too narrow to aim at, so the
+      // tiny calendar skips past month level; the 500-day one settles there.
+      expect(chooseSnapLevel(tiny, view)).toBe('year');
+      expect(chooseSnapLevel(huge, view)).toBe('month');
+    });
+  });
+
+  describe('snapDay', () => {
+    it('is idempotent at every level', () => {
+      for (const level of ['day', 'month', 'year'] as const) {
+        for (const cal of [G, UNEVEN]) {
+          for (const day of [-4000.3, -1, 0, 0.5, 733.25, 12345.9, 738000.1]) {
+            const once = snapDay(cal, day, level);
+            expect(snapDay(cal, once, level)).toBe(once);
+          }
+        }
+      }
+    });
+
+    it('lands on whole days at day level', () => {
+      for (const day of [-10.4, 0.5, 733.25, 12345.9]) {
+        expect(Number.isInteger(snapDay(G, day, 'day'))).toBe(true);
+      }
+    });
+
+    it('always lands on the first of a month at month level', () => {
+      for (const cal of [G, UNEVEN]) {
+        for (let day = -200; day < 900; day += 7) {
+          const snapped = snapDay(cal, day + 0.4, 'month');
+          expect(fromAbsolute(cal, { absoluteDay: snapped }).day).toBe(1);
+        }
+      }
+    });
+
+    it('always lands on the first day of a year at year level', () => {
+      for (const cal of [G, UNEVEN]) {
+        for (let day = -500; day < 2000; day += 37) {
+          const date = fromAbsolute(cal, { absoluteDay: snapDay(cal, day, 'year') });
+          expect(date.month).toBe(0);
+          expect(date.day).toBe(1);
+        }
+      }
+    });
+
+    it('never moves a value further than the period it sits in', () => {
+      for (let day = 0; day < 4000; day += 13) {
+        const snapped = snapDay(G, day, 'month');
+        expect(Math.abs(snapped - day)).toBeLessThanOrEqual(31);
+      }
+    });
+
+    it('honours variable month length around a leap February', () => {
+      // Feb 15.5 is past the midpoint of a 28-day February but not of a 29-day one.
+      expect(snapDay(G, dayOf(2023, 2, 15) + 0.5, 'month')).toBe(dayOf(2023, 3, 1));
+      expect(snapDay(G, dayOf(2024, 2, 15) + 0.5, 'month')).toBe(dayOf(2024, 2, 1));
+    });
+  });
+
+  describe('stepDay', () => {
+    it('steps by the real length of the month it leaves', () => {
+      expect(stepDay(G, dayOf(2024, 2, 1), 'month', 1) - dayOf(2024, 2, 1)).toBe(29);
+      expect(stepDay(G, dayOf(2023, 2, 1), 'month', 1) - dayOf(2023, 2, 1)).toBe(28);
+      expect(stepDay(UNEVEN, toAbsolute(UNEVEN, { year: 3, month: 1, day: 1 }).absoluteDay, 'month', 1)
+        - toAbsolute(UNEVEN, { year: 3, month: 1, day: 1 }).absoluteDay).toBe(33);
+    });
+
+    it('rolls over the year boundary in both directions', () => {
+      const last = toAbsolute(UNEVEN, { year: 6, month: 2, day: 1 }).absoluteDay;
+      const next = fromAbsolute(UNEVEN, { absoluteDay: stepDay(UNEVEN, last, 'month', 1) });
+      expect([next.year, next.month, next.day]).toEqual([7, 0, 1]);
+
+      const first = toAbsolute(UNEVEN, { year: 6, month: 0, day: 1 }).absoluteDay;
+      const previous = fromAbsolute(UNEVEN, { absoluteDay: stepDay(UNEVEN, first, 'month', -1) });
+      expect([previous.year, previous.month, previous.day]).toEqual([5, 2, 1]);
+    });
+
+    it('is reversible at day and month level', () => {
+      for (const cal of [G, UNEVEN]) {
+        for (const level of ['day', 'month', 'year'] as const) {
+          for (const day of [0, 733, 12345]) {
+            expect(stepDay(cal, stepDay(cal, day, level, 1), level, -1)).toBe(snapDay(cal, day, level));
+          }
+        }
+      }
+    });
+
+    it('always moves in the requested direction', () => {
+      for (const level of ['day', 'month', 'year'] as const) {
+        for (let day = 0; day < 3000; day += 97) {
+          expect(stepDay(G, day, level, 1)).toBeGreaterThan(snapDay(G, day, level));
+          expect(stepDay(G, day, level, -1)).toBeLessThan(snapDay(G, day, level));
+        }
+      }
+    });
   });
 });
