@@ -91,28 +91,76 @@ const MIN_SNAP_PX = 14;
 /** Hard ceiling on generated slots, in case a degenerate view slips through. */
 const MAX_SLOTS = 512;
 
-/**
- * Pick the granularity drag edits should snap to.
- *
- * Deliberately *not* the same as {@link generateTicks}'s label level. Labels
- * thin out to whatever reads well, so a three-year view labels years — snapping
- * to years there would let an event land only on new year's day. This instead
- * takes the finest unit that is still at least {@link MIN_SNAP_PX} wide on
- * screen. Every unit width comes from the calendar (`normalYearLength`,
- * `months.length`, `unitsPerDay`), so a 40-day fantasy month snaps like a
- * 40-day month, not like a Gregorian one.
- */
-export function chooseSnapLevel(cal: CalendarSystem, view: AxisView): TickLevel {
-  const spanDays = view.endDay - view.startDay;
-  if (spanDays <= 0) return 'day';
-  const minDays = (spanDays / Math.max(1, view.widthPx)) * MIN_SNAP_PX;
-  if (cal.baseUnit === 'minute' && cal.unitsPerDay > 1) {
-    if (1 / cal.unitsPerDay >= minDays) return 'minute';
-    if (60 / cal.unitsPerDay >= minDays) return 'hour';
+export type SnapLevel = 'minute' | 'hour' | 'day' | 'week' | 'month' | 'year';
+
+/** A snap granularity: `step` units of `level` per slot. */
+export interface SnapResolution {
+  level: SnapLevel;
+  step: number;
+}
+
+/** Days in one week of this calendar. Seven only by default. */
+function weekLength(cal: CalendarSystem): number {
+  return cal.week?.days.length || 7;
+}
+
+/** The calendar's own origin, used to tile weeks from a fixed point. */
+function calendarOrigin(cal: CalendarSystem): number {
+  return toAbsolute(cal, { year: 1, month: 0, day: 1 }).absoluteDay;
+}
+
+/** Typical width in days of one step at this resolution. */
+function resolutionDays(cal: CalendarSystem, level: SnapLevel, step: number): number {
+  switch (level) {
+    case 'minute': return step / cal.unitsPerDay;
+    case 'hour': return (step * 60) / cal.unitsPerDay;
+    case 'day': return step;
+    case 'week': return step * weekLength(cal);
+    case 'month': return step * (normalYearLength(cal) / cal.months.length);
+    case 'year': return step * normalYearLength(cal);
   }
-  if (1 >= minDays) return 'day';
-  if (normalYearLength(cal) / cal.months.length >= minDays) return 'month';
-  return 'year';
+}
+
+/**
+ * Pick the granularity drag edits snap to, and slots are drawn at.
+ *
+ * Walks a ladder from finest to coarsest and takes the first rung at least
+ * {@link MIN_SNAP_PX} wide on screen: minutes, hours, days, weeks, months, then
+ * years in widening steps. Every width comes from the calendar, so a 40-day
+ * fantasy month and a 5-day fantasy week size their own rungs and zooming out
+ * walks the user's own units rather than Gregorian ones.
+ *
+ * Deliberately *not* {@link generateTicks}'s label level. Labels thin out to
+ * whatever reads well; snapping needs a boundary you can aim at.
+ *
+ * Always returns a resolution. Year steps widen without bound, so there is no
+ * zoom at which this fails to find a rung and has to draw nothing.
+ */
+export function chooseSnapResolution(cal: CalendarSystem, view: AxisView): SnapResolution {
+  const spanDays = view.endDay - view.startDay;
+  if (!(spanDays > 0)) return { level: 'day', step: 1 };
+  const minDays = (spanDays / Math.max(1, view.widthPx)) * MIN_SNAP_PX;
+
+  const ladder: SnapResolution[] = [];
+  // Sub-day rungs only where time of day is actually what you are looking at.
+  // The same thresholds generateTicks uses, so the slots never offer a
+  // precision the axis is not labelling: a fortnight view would otherwise fit
+  // twelve-hour slots and snap events to noon.
+  if (cal.baseUnit === 'minute' && cal.unitsPerDay > 1) {
+    if (spanDays <= 3 / 24) [1, 2, 5, 10, 15, 30].forEach(step => ladder.push({ level: 'minute', step }));
+    if (spanDays <= 3) [1, 2, 3, 6, 12].forEach(step => ladder.push({ level: 'hour', step }));
+  }
+  ladder.push({ level: 'day', step: 1 }, { level: 'week', step: 1 }, { level: 'month', step: 1 });
+  YEAR_STEPS.forEach(step => ladder.push({ level: 'year', step }));
+
+  for (const rung of ladder) {
+    if (resolutionDays(cal, rung.level, rung.step) >= minDays) return rung;
+  }
+  // Past the table, widen years by powers of ten. There is always a coarser
+  // step, which is why this never has to give up.
+  let step = YEAR_STEPS[YEAR_STEPS.length - 1];
+  while (resolutionDays(cal, 'year', step) < minDays) step *= 10;
+  return { level: 'year', step };
 }
 
 /**
@@ -124,13 +172,22 @@ export function chooseSnapLevel(cal: CalendarSystem, view: AxisView): TickLevel 
  * and compares its two ends, which is exact for any calendar and stays O(1) in
  * the pointermove hot path.
  */
-export function snapDay(cal: CalendarSystem, absoluteDay: number, level: TickLevel): number {
+export function snapDay(cal: CalendarSystem, absoluteDay: number, res: SnapResolution): number {
+  const { level, step } = res;
   if (level === 'minute' || level === 'hour') {
-    const stepUnits = level === 'minute' ? 1 : 60;
+    const stepUnits = (level === 'minute' ? 1 : 60) * step;
     const units = absoluteDay * cal.unitsPerDay;
     return (Math.round(units / stepUnits) * stepUnits) / cal.unitsPerDay;
   }
-  if (level === 'day') return Math.round(absoluteDay);
+  if (level === 'day') return Math.round(absoluteDay / step) * step;
+  if (level === 'week') {
+    // Weeks have no calendar anchor of their own, so they tile from the
+    // calendar's origin rather than from each year's start, which would make
+    // the cycle stutter every new year.
+    const span = weekLength(cal) * step;
+    const origin = calendarOrigin(cal);
+    return origin + Math.round((absoluteDay - origin) / span) * span;
+  }
 
   const date = fromAbsolute(cal, { absoluteDay: Math.floor(absoluteDay) });
   let lower: number;
@@ -142,8 +199,9 @@ export function snapDay(cal: CalendarSystem, absoluteDay: number, level: TickLev
       ? toAbsolute(cal, { year: date.year, month: next, day: 1 }).absoluteDay
       : toAbsolute(cal, { year: date.year + 1, month: 0, day: 1 }).absoluteDay;
   } else {
-    lower = toAbsolute(cal, { year: date.year, month: 0, day: 1 }).absoluteDay;
-    upper = toAbsolute(cal, { year: date.year + 1, month: 0, day: 1 }).absoluteDay;
+    const anchor = Math.floor(date.year / step) * step;
+    lower = toAbsolute(cal, { year: anchor, month: 0, day: 1 }).absoluteDay;
+    upper = toAbsolute(cal, { year: anchor + step, month: 0, day: 1 }).absoluteDay;
   }
   return absoluteDay - lower <= upper - absoluteDay ? lower : upper;
 }
@@ -157,18 +215,20 @@ export function snapDay(cal: CalendarSystem, absoluteDay: number, level: TickLev
 export function stepDay(
   cal: CalendarSystem,
   absoluteDay: number,
-  level: TickLevel,
+  res: SnapResolution,
   direction: 1 | -1,
 ): number {
-  const snapped = snapDay(cal, absoluteDay, level);
+  const { level, step } = res;
+  const snapped = snapDay(cal, absoluteDay, res);
   if (level === 'minute' || level === 'hour') {
-    return snapped + (direction * (level === 'minute' ? 1 : 60)) / cal.unitsPerDay;
+    return snapped + (direction * (level === 'minute' ? 1 : 60) * step) / cal.unitsPerDay;
   }
-  if (level === 'day') return snapped + direction;
+  if (level === 'day') return snapped + direction * step;
+  if (level === 'week') return snapped + direction * weekLength(cal) * step;
 
   const date = fromAbsolute(cal, { absoluteDay: snapped });
   if (level === 'year') {
-    return toAbsolute(cal, { year: date.year + direction, month: 0, day: 1 }).absoluteDay;
+    return toAbsolute(cal, { year: date.year + direction * step, month: 0, day: 1 }).absoluteDay;
   }
   const target = date.month + direction;
   if (target < 0) {
@@ -186,30 +246,24 @@ export function stepDay(
  * Every snap boundary in the visible window, in absolute days.
  *
  * These are the slots events drop into, so this must agree exactly with
- * {@link snapDay} — it is built from the same two primitives rather than
+ * {@link snapDay} — it is built from the same primitives rather than
  * re-deriving a grid, so the two cannot drift apart.
  *
- * Returns nothing when the slots would be closer together than
- * {@link MIN_SNAP_PX}. That happens two ways: {@link chooseSnapLevel} sizes
- * months by the year's *average*, so a 7-day month in a calendar averaging 20
- * can still come out too narrow; and past year level there is no coarser unit
- * to fall back to, so a five-century view has years 2px apart. Neither is worth
- * drawing, and showing no slots is honest where showing a smear is not. Snapping
- * still works at those zooms, it just is not slot-driven.
+ * Because {@link chooseSnapResolution} always finds a rung wide enough, slots
+ * exist at every zoom: days become weeks become months become decades. An
+ * earlier version returned nothing when the grid got too dense, which left the
+ * user with no visible target exactly when they most needed one.
  */
 export function snapSlots(cal: CalendarSystem, view: AxisView): number[] {
   const spanDays = view.endDay - view.startDay;
   if (!(spanDays > 0)) return [];
-  const level = chooseSnapLevel(cal, view);
-  const minDays = (spanDays / Math.max(1, view.widthPx)) * MIN_SNAP_PX;
+  const res = chooseSnapResolution(cal, view);
   const slots: number[] = [];
-  let day = snapDay(cal, view.startDay, level);
-  if (day < view.startDay) day = stepDay(cal, day, level, 1);
+  let day = snapDay(cal, view.startDay, res);
+  if (day < view.startDay) day = stepDay(cal, day, res, 1);
   while (day <= view.endDay && slots.length < MAX_SLOTS) {
-    const previous = slots[slots.length - 1];
-    if (previous !== undefined && day - previous < minDays) return [];
     slots.push(day);
-    const next = stepDay(cal, day, level, 1);
+    const next = stepDay(cal, day, res, 1);
     // stepDay always advances, but a malformed calendar could stall the loop.
     if (!(next > day)) break;
     day = next;

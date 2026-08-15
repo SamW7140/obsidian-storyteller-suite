@@ -10,8 +10,8 @@ import { GREGORIAN_CALENDAR } from '../calendar/builtins';
 import { parseToAbsoluteDay, formatAbsoluteDay } from '../calendar/CalendarDateText';
 import { daysInYear, fromAbsolute, monthsInYear, normalYearLength, toAbsolute } from '../calendar/CalendarEngine';
 import type { CalendarSystem } from '../calendar/types';
-import { chooseSnapLevel, generateTicks, snapDay, snapSlots, stepDay } from '../calendar/TimelineAxis';
-import type { AxisView, TickLevel } from '../calendar/TimelineAxis';
+import { chooseSnapResolution, generateTicks, snapDay, snapSlots, stepDay } from '../calendar/TimelineAxis';
+import type { AxisView, SnapResolution } from '../calendar/TimelineAxis';
 
 export interface TimelineRendererOptions {
     ganttMode?: boolean;
@@ -1991,8 +1991,8 @@ export class NativeTimelineRenderer {
         return { startDay: this.viewStart / DAY_MS + epoch, endDay: this.viewEnd / DAY_MS + epoch, widthPx: size };
     }
 
-    private snapLevel(): TickLevel {
-        return chooseSnapLevel(this.calendarRegistry.getActiveCalendar(), this.axisView());
+    private snapResolution(): SnapResolution {
+        return chooseSnapResolution(this.calendarRegistry.getActiveCalendar(), this.axisView());
     }
 
     /**
@@ -2002,14 +2002,14 @@ export class NativeTimelineRenderer {
      */
     private snap(value: number): number {
         const epoch = this.unixEpochAbsoluteDay();
-        const snapped = snapDay(this.calendarRegistry.getActiveCalendar(), value / DAY_MS + epoch, this.snapLevel());
+        const snapped = snapDay(this.calendarRegistry.getActiveCalendar(), value / DAY_MS + epoch, this.snapResolution());
         return (snapped - epoch) * DAY_MS;
     }
 
     /** One snap unit away from `value`, in this calendar rather than in fixed milliseconds. */
     private step(value: number, direction: 1 | -1): number {
         const epoch = this.unixEpochAbsoluteDay();
-        const stepped = stepDay(this.calendarRegistry.getActiveCalendar(), value / DAY_MS + epoch, this.snapLevel(), direction);
+        const stepped = stepDay(this.calendarRegistry.getActiveCalendar(), value / DAY_MS + epoch, this.snapResolution(), direction);
         return (stepped - epoch) * DAY_MS;
     }
     private formatEditDate(value: number): string {
