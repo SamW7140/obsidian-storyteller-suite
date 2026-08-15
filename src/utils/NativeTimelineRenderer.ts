@@ -12,6 +12,7 @@ import { daysInYear, fromAbsolute, monthsInYear, normalYearLength, toAbsolute } 
 import type { CalendarSystem } from '../calendar/types';
 import { chooseSnapResolution, generateTicks, snapDay, snapSlots, stepDay } from '../calendar/TimelineAxis';
 import type { AxisView, SnapResolution } from '../calendar/TimelineAxis';
+import { isEventInFork, isEventOnMain } from './ForkVisibility';
 
 export interface TimelineRendererOptions {
     ganttMode?: boolean;
@@ -465,7 +466,11 @@ export class NativeTimelineRenderer {
         forks.forEach((fork, laneIndex) => {
             const lane: Lane = { id: `fork:${fork.id}`, label: fork.name, color: fork.color || this.palette[laneIndex % this.palette.length], explicitColor: !!fork.color, items: [], top: 0, height: 0, branchDepth: depthOf(fork) };
             const divergence = this.parseDate(fork.divergenceDate);
-            main.filter(event => this.eventStart(event) <= divergence).forEach((event, index) => lane.items.push({ ...this.makeItem(event, index, lane, 0), forkId: fork.id, inherited: true }));
+            // Same rule as the single-branch view: the trunk up to the
+            // divergence is inherited, and an unreadable divergence date keeps
+            // the trunk rather than silently emptying the branch.
+            main.filter(event => isEventInFork(this.eventKey(event), this.eventStart(event), fork, divergence, forks))
+                .forEach((event, index) => lane.items.push({ ...this.makeItem(event, index, lane, 0), forkId: fork.id, inherited: true }));
             events.filter(event => (fork.forkEvents || []).includes(this.eventKey(event))).forEach((event, index) => lane.items.push({ ...this.makeItem(event, index, lane, 0), forkId: fork.id }));
             lanes.push(lane);
         });
@@ -481,7 +486,23 @@ export class NativeTimelineRenderer {
         // chosen lane colour counts; a palette default must not displace the
         // milestone gold.
         const customColor = this.normalizeColor(event.color) || (lane.explicitColor ? lane.color : undefined);
-        return { id: `${this.eventKey(event)}:${lane.id}:${duplicateIndex}`, event, eventIndex, start, end: Math.max(start, end), laneId: lane.id, laneLabel: lane.label, laneColor: lane.color, row: 0, approximate: this.isApproximate(event), customColor };
+        return { id: `${this.eventKey(event)}:${lane.id}:${duplicateIndex}`, event, eventIndex, start, end: Math.max(start, end), laneId: lane.id, laneLabel: lane.label, laneColor: lane.color, row: 0, approximate: this.isApproximate(event), customColor, inherited: this.isInheritedTrunk(event) };
+    }
+
+    /**
+     * Whether an event shown in a single-branch view came from the trunk
+     * rather than the branch.
+     *
+     * Inherited events draw ghosted, the same as in compare mode. That is
+     * worth keeping here because a trunk event is shared by every branch:
+     * dragging it in edit mode rewrites history for all of them, and the
+     * dimming is the only warning of that.
+     */
+    private isInheritedTrunk(event: Event): boolean {
+        const forkId = this.filters.forkId;
+        if (!forkId || forkId === '__compare__') return false;
+        const fork = this.plugin.getTimelineFork(forkId);
+        return Boolean(fork) && !fork?.forkEvents?.includes(this.eventKey(event));
     }
 
     /** A usable colour string, or undefined when the value is blank or junk. */
@@ -1946,14 +1967,19 @@ export class NativeTimelineRenderer {
      */
     private matchesFork(event: Event): boolean {
         const key = this.eventKey(event);
-        if (this.filters.forkId && this.filters.forkId !== '__compare__') {
-            const fork = this.plugin.getTimelineFork(this.filters.forkId);
-            return Boolean(fork?.forkEvents?.includes(key));
-        }
-        if (this.filters.forkId === undefined) {
-            return !this.plugin.getTimelineForks().some(fork => fork.forkEvents?.includes(key));
-        }
-        return true;
+        const forkId = this.filters.forkId;
+        if (forkId === undefined) return isEventOnMain(key, this.plugin.getTimelineForks());
+        if (forkId === '__compare__') return true;
+
+        const fork = this.plugin.getTimelineFork(forkId);
+        if (!fork) return false;
+        return isEventInFork(
+            key,
+            this.eventStart(event),
+            fork,
+            this.parseDate(fork.divergenceDate),
+            this.plugin.getTimelineForks()
+        );
     }
 
     private async loadOptionalSources(): Promise<void> {
