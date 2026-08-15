@@ -11683,6 +11683,89 @@ body.mod-rtl .storyteller-group-members {
   color: var(--text-muted);
 }
 
+/* A toggle that stays put. The accent arrives as a surface, so the pressed
+   state is legible without the icon having to change identity. */
+.storyteller-toolbar-toggle.is-active,
+.storyteller-toolbar-toggle.is-active:hover {
+  background: var(--interactive-accent);
+  border-color: var(--interactive-accent);
+  color: var(--text-on-accent);
+}
+
+.storyteller-toolbar-toggle.is-active .storyteller-toolbar-btn-icon {
+  color: var(--text-on-accent);
+}
+
+/* Count of enabled layers, so a menu button still reports its state. */
+.storyteller-toolbar-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 1.15em;
+  padding: 0 0.25em;
+  border-radius: var(--radius-s);
+  background: var(--background-modifier-border);
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+  line-height: 1.35;
+}
+
+.storyteller-toolbar-badge.is-empty {
+  opacity: 0.55;
+}
+
+/* Zoom as one control: minus, what you are looking at, plus. */
+.storyteller-zoom-control {
+  display: inline-flex;
+  align-items: stretch;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: var(--radius-m);
+  overflow: hidden;
+  background: var(--background-primary);
+}
+
+.storyteller-timeline-toolbar .storyteller-zoom-control .storyteller-toolbar-btn {
+  border: none;
+  border-radius: 0;
+  box-shadow: none;
+  background: transparent;
+}
+
+.storyteller-zoom-readout {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  /* Wide enough that "3 decades" replacing "a day" does not shove the
+     buttons either side of it around while you are still zooming. */
+  min-width: 6.5rem;
+  justify-content: space-between;
+  padding: 0.25rem 0.45rem;
+  border: none;
+  border-inline: 1px solid var(--background-modifier-border);
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  color: var(--text-normal);
+  font-size: var(--font-ui-smaller);
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.storyteller-zoom-readout:hover {
+  background: var(--background-modifier-hover);
+}
+
+/* The blanket 8px radius on every toolbar button rounds the inner members of
+   a joined control, which breaks the seam that makes it read as one thing.
+   Matched here at equal weight so the group keeps its shape. */
+.storyteller-timeline-view .storyteller-timeline-toolbar .storyteller-segment-btn,
+.storyteller-timeline-modal .storyteller-timeline-toolbar .storyteller-segment-btn,
+.storyteller-timeline-view .storyteller-timeline-toolbar .storyteller-zoom-readout,
+.storyteller-timeline-modal .storyteller-timeline-toolbar .storyteller-zoom-readout {
+  border-radius: 0;
+}
+
 /* Search grows into whatever room is left. */
 .storyteller-timeline-search-wrap {
   display: flex;

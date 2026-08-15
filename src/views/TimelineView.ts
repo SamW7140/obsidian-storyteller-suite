@@ -14,6 +14,9 @@ import { PlatformUtils } from '../utils/PlatformUtils';
 
 export const VIEW_TYPE_TIMELINE = 'storyteller-timeline-view';
 
+/** Sentinel value for the "manage these" entry at the foot of a picker. */
+const MANAGE_OPTION = '__manage__';
+
 // Re-export TimelineUIState as TimelineViewState for backward compatibility
 export type TimelineViewState = TimelineUIState;
 
@@ -183,12 +186,11 @@ export class TimelineView extends ItemView {
         this.controlsBuilder.createViewModeSegment(scope);
         this.buildGroupingField(scope);
         this.buildTrackField(scope);
+        this.buildBranchField(scope);
 
-        // How is it framed
+        // How much of it is on screen
         const frame = this.toolbarEl.createDiv('storyteller-toolbar-group');
-        this.controlsBuilder.createZoomOutButton(frame);
-        this.controlsBuilder.createZoomInButton(frame);
-        this.controlsBuilder.createFitMenu(frame);
+        this.controlsBuilder.createZoomControl(frame);
 
         // How is it drawn
         const display = this.toolbarEl.createDiv('storyteller-toolbar-group');
@@ -197,7 +199,8 @@ export class TimelineView extends ItemView {
             getShowScenes: () => this.showScenes,
             setShowScenes: value => { this.showScenes = value; this.renderer?.setShowScenes(value); },
             getShowWatchedNotes: () => this.showWatchedNotes,
-            setShowWatchedNotes: value => { this.showWatchedNotes = value; this.renderer?.setShowWatchedNotes(value); }
+            setShowWatchedNotes: value => { this.showWatchedNotes = value; this.renderer?.setShowWatchedNotes(value); },
+            onManageEras: () => this.openEraManager()
         });
 
         // Pushed right: conflicts, search, overflow
@@ -219,22 +222,71 @@ export class TimelineView extends ItemView {
         this.controlsBuilder.createGroupingDropdown(field);
     }
 
+    /**
+     * The track picker, with its own manager as the last option.
+     *
+     * Management belongs next to the thing it manages. Buried in an overflow
+     * menu it was a second place to learn about tracks; here you find it the
+     * moment you go looking at the list.
+     */
     private buildTrackField(container: HTMLElement): void {
         const tracks = this.plugin.settings.timelineTracks || [];
         const visibleTracks = TimelineTrackManager.getVisibleTracks(tracks);
-        // A track picker with no tracks to pick is noise; the overflow menu
-        // still offers the manager for anyone who wants to create one.
-        if (!visibleTracks.length) return;
 
         const field = this.labelledField(container, 'Track');
         const dropdown = new DropdownComponent(field);
-        dropdown.addOption('', 'All events');
+        dropdown.addOption('', visibleTracks.length ? 'All events' : 'No tracks yet');
         visibleTracks.forEach(track => { dropdown.addOption(track.id, track.name); });
+        dropdown.addOption(MANAGE_OPTION, 'Manage tracks…');
         dropdown.setValue(this.currentState.currentTrackId || '');
         dropdown.onChange((trackId: string) => {
+            if (trackId === MANAGE_OPTION) {
+                dropdown.setValue(this.currentState.currentTrackId || '');
+                this.openTrackManager();
+                return;
+            }
             this.currentState.currentTrackId = trackId || undefined;
             void this.applyTrackFilter(trackId);
         });
+    }
+
+    /**
+     * Which branch you are reading, as a field rather than a menu item.
+     *
+     * A fork changes what events exist, the same class of thing as Group and
+     * Track, and hiding it in the overflow meant you could be looking at a
+     * branch with nothing on screen saying so.
+     */
+    private buildBranchField(container: HTMLElement): void {
+        const forks = this.plugin.getTimelineForks();
+        if (!forks.length) return;
+
+        const field = this.labelledField(container, 'Branch');
+        const dropdown = new DropdownComponent(field);
+        dropdown.addOption('main', 'Main timeline');
+        dropdown.addOption('__compare__', 'Compare branches');
+        forks.forEach(fork => { dropdown.addOption(fork.id, fork.name); });
+        dropdown.setValue(this.currentState.currentForkId || 'main');
+        dropdown.onChange((selection: string) => { void this.selectFork(selection); });
+    }
+
+    private openTrackManager(): void {
+        void (async () => {
+            const { TrackManagerModal } = await import('../modals/TrackManagerModal');
+            const tracks = this.plugin.settings.timelineTracks || [];
+            new TrackManagerModal(this.app, this.plugin, tracks, updated => { void (async () => {
+                this.plugin.settings.timelineTracks = updated;
+                await this.plugin.saveSettings();
+                await this.refresh();
+            })(); }).open();
+        })();
+    }
+
+    private openEraManager(): void {
+        void (async () => {
+            const { EraListModal } = await import('../modals/EraListModal');
+            new EraListModal(this.app, this.plugin).open();
+        })();
     }
 
     /**
@@ -283,8 +335,12 @@ export class TimelineView extends ItemView {
     }
 
     /**
-     * Everything that is reached occasionally rather than while reading the
-     * timeline: branches, era and track management, export, refresh.
+     * What is left once everything that changes the view has a home of its own:
+     * two one-shot actions that touch the whole timeline.
+     *
+     * The overflow used to hold a filter, the branch switcher and both entity
+     * managers as well, which meant an unlabelled button was the only route to
+     * things you needed while reading. Nothing in here changes what you see.
      */
     private buildOverflowButton(container: HTMLElement): void {
         const btn = container.createEl('button', {
@@ -295,52 +351,8 @@ export class TimelineView extends ItemView {
 
         btn.addEventListener('click', clickEvent => {
             const menu = new Menu();
-
-            menu.addItem(item => item.setTitle('Milestones only')
-                .setChecked(Boolean(this.currentState.filters.milestonesOnly))
-                .onClick(() => {
-                    this.currentState.filters.milestonesOnly = !this.currentState.filters.milestonesOnly;
-                    this.renderer?.applyFilters(this.currentState.filters);
-                    this.buildFilterToggle();
-                    this.updateFooterStatus();
-                    this.updateSearchDropdown();
-                }));
-
-            menu.addSeparator();
-            const forks = this.plugin.getTimelineForks();
-            menu.addItem(item => item.setTitle('Main timeline')
-                .setChecked(!this.currentState.currentForkId)
-                .onClick(() => { void this.selectFork('main'); }));
-            if (forks.length) {
-                menu.addItem(item => item.setTitle('Compare branches')
-                    .setChecked(this.currentState.currentForkId === '__compare__')
-                    .onClick(() => { void this.selectFork('__compare__'); }));
-                forks.forEach(fork => {
-                    menu.addItem(item => item.setTitle(fork.name)
-                        .setChecked(this.currentState.currentForkId === fork.id)
-                        .onClick(() => { void this.selectFork(fork.id); }));
-                });
-            }
-
-            menu.addSeparator();
-            menu.addItem(item => item.setTitle('Manage eras').setIcon('calendar-range').onClick(() => { void (async () => {
-                const { EraListModal } = await import('../modals/EraListModal');
-                new EraListModal(this.app, this.plugin).open();
-            })(); }));
-            menu.addItem(item => item.setTitle('Manage tracks').setIcon('layers').onClick(() => { void (async () => {
-                const { TrackManagerModal } = await import('../modals/TrackManagerModal');
-                const tracks = this.plugin.settings.timelineTracks || [];
-                new TrackManagerModal(this.app, this.plugin, tracks, updated => { void (async () => {
-                    this.plugin.settings.timelineTracks = updated;
-                    await this.plugin.saveSettings();
-                    await this.refresh();
-                })(); }).open();
-            })(); }));
-
-            menu.addSeparator();
-            menu.addItem(item => item.setTitle('Export').setIcon('download').onClick(() => this.showExportMenu(btn)));
+            menu.addItem(item => item.setTitle('Export…').setIcon('download').onClick(() => this.showExportMenu(btn)));
             menu.addItem(item => item.setTitle('Refresh').setIcon('refresh-cw').onClick(() => { void this.refresh(); }));
-
             menu.showAtMouseEvent(clickEvent);
         });
     }
@@ -436,7 +448,10 @@ export class TimelineView extends ItemView {
             defaultGanttDuration: this.plugin.settings.ganttDefaultDuration ?? 1,
             showProgressBars: this.plugin.settings.ganttShowProgressBars ?? true,
             dependencyArrowStyle: this.plugin.settings.ganttArrowStyle ?? 'solid',
-            onConflictsDetected: (conflicts) => { void this.handleConflicts(conflicts); }
+            onConflictsDetected: (conflicts) => { void this.handleConflicts(conflicts); },
+            // The span readout is only honest if panning and the wheel update
+            // it too, not just the zoom buttons.
+            onViewChange: () => this.controlsBuilder.updateZoomReadout()
         });
 
         try {

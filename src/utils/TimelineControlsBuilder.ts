@@ -37,6 +37,8 @@ export interface DisplayMenuExtras {
     setShowScenes: (value: boolean) => void;
     getShowWatchedNotes: () => boolean;
     setShowWatchedNotes: (value: boolean) => void;
+    /** Era management lives beside the era layer rather than in an overflow. */
+    onManageEras: () => void;
 }
 
 const DENSITY_PRESETS = [
@@ -44,6 +46,33 @@ const DENSITY_PRESETS = [
     { key: 'balanced', value: 50, label: 'Balanced rows' },
     { key: 'spacious', value: 70, label: 'Spacious rows' }
 ] as const;
+
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+function plural(count: number, one: string, many: string): string {
+    return `${count} ${count === 1 ? one : many}`;
+}
+
+/**
+ * The visible span in the largest unit that still reads as a whole number, so
+ * the readout says "3 decades" rather than "10957 days".
+ *
+ * Each threshold sits where the next unit first rounds to one of itself. Cut
+ * over any earlier and the readout jumps straight from "18 months" to "2
+ * years", skipping a value it should have passed through.
+ */
+export function formatSpan(ms: number): string {
+    const days = Math.max(ms, 0) / DAY_MS;
+    if (days < 1.5) return 'a day';
+    if (days < 45) return plural(Math.round(days), 'day', 'days');
+    const months = days / 30.44;
+    if (months < 22) return plural(Math.round(months), 'month', 'months');
+    const years = days / 365.25;
+    if (years < 20) return plural(Math.round(years), 'year', 'years');
+    if (years < 100) return plural(Math.round(years / 10), 'decade', 'decades');
+    if (years < 1000) return plural(Math.round(years / 100), 'century', 'centuries');
+    return plural(Math.round(years / 1000), 'millennium', 'millennia');
+}
 
 function nearestDensity(density: number): typeof DENSITY_PRESETS[number] {
     return DENSITY_PRESETS.reduce(
@@ -60,6 +89,8 @@ export class TimelineControlsBuilder {
     private plugin: StorytellerSuitePlugin;
     private state: TimelineUIState;
     private callbacks: TimelineControlCallbacks;
+    /** Span readout inside the zoom control, refreshed from the draw loop. */
+    private zoomReadoutEl: HTMLElement | null = null;
 
     constructor(
         plugin: StorytellerSuitePlugin,
@@ -289,28 +320,39 @@ export class TimelineControlsBuilder {
     }
 
     /**
-     * Create edit mode toggle button
+     * Edit mode, as a labelled toggle.
+     *
+     * It used to show a padlock when off and a pencil when on. A padlock says
+     * "this is protected" rather than "click here to edit", and swapping the
+     * glyph between states left the button with no stable identity: the pencil
+     * only ever appeared once you had already found the thing you were looking
+     * for. One icon, one word, and a pressed state instead.
      */
     createEditModeToggle(container: HTMLElement): HTMLButtonElement {
         const btn = container.createEl('button', {
-            cls: 'clickable-icon storyteller-toolbar-btn',
+            cls: 'storyteller-toolbar-btn-labelled storyteller-toolbar-toggle',
             attr: {
                 'aria-label': t('editMode'),
                 'title': t('editModeTooltip')
             }
         });
-        setIcon(btn, this.state.editMode ? 'pencil' : 'lock');
+        const icon = btn.createSpan('storyteller-toolbar-btn-icon');
+        setIcon(icon, 'pencil');
+        const label = btn.createSpan({ cls: 'storyteller-toolbar-btn-text' });
+
+        const sync = () => {
+            const on = this.state.editMode;
+            label.setText(on ? 'Editing' : 'Edit');
+            btn.toggleClass('is-active', on);
+            btn.setAttribute('aria-pressed', String(on));
+        };
+        sync();
 
         btn.addEventListener('click', () => {
             this.state.editMode = !this.state.editMode;
-            setIcon(btn, this.state.editMode ? 'pencil' : 'lock');
+            sync();
             this.callbacks.getRenderer()?.setEditMode(this.state.editMode);
-
-            if (this.state.editMode) {
-                new Notice('Edit mode enabled - drag events to reschedule');
-            } else {
-                new Notice('Edit mode disabled');
-            }
+            new Notice(this.state.editMode ? t('editModeEnabled') : t('editModeDisabled'));
         });
 
         return btn;
@@ -443,55 +485,125 @@ export class TimelineControlsBuilder {
     }
 
     /**
-     * Navigation menu: the five ways to reframe the view, behind one button
-     * rather than five icons that all look like zooming.
+     * Zoom, as one control: minus, the span you are currently looking at, plus.
+     *
+     * The two magnifiers had no readout, so nothing told you how much time was
+     * on screen, and the decade and century presets sat in a separate menu as
+     * though they were a different axis. Putting the span between the two
+     * buttons gives zooming feedback and makes the presets obviously the same
+     * dimension: they set the number the readout shows.
      */
-    createFitMenu(container: HTMLElement): HTMLButtonElement {
-        const btn = container.createEl('button', {
-            cls: 'storyteller-toolbar-btn storyteller-toolbar-btn-labelled',
-            attr: { 'aria-label': 'Frame the view', 'aria-haspopup': 'menu' }
+    createZoomControl(container: HTMLElement): HTMLElement {
+        const group = container.createDiv('storyteller-zoom-control');
+
+        const out = group.createEl('button', {
+            cls: 'clickable-icon storyteller-toolbar-btn',
+            attr: { 'aria-label': 'Zoom out', 'title': 'Show more time' }
         });
-        btn.createSpan({ cls: 'storyteller-toolbar-btn-text', text: t('fit') });
-        const caret = btn.createSpan('storyteller-toolbar-caret');
+        setIcon(out, 'zoom-out');
+        out.addEventListener('click', () => {
+            this.callbacks.getRenderer()?.zoomBy(4);
+            this.updateZoomReadout();
+        });
+
+        const readout = group.createEl('button', {
+            cls: 'storyteller-zoom-readout',
+            attr: { 'aria-label': 'Time on screen', 'aria-haspopup': 'menu', 'title': 'Jump to a span' }
+        });
+        this.zoomReadoutEl = readout.createSpan({ cls: 'storyteller-zoom-readout-text' });
+        const caret = readout.createSpan('storyteller-toolbar-caret');
         setIcon(caret, 'chevron-down');
 
-        btn.addEventListener('click', clickEvent => {
+        readout.addEventListener('click', clickEvent => {
             const renderer = this.callbacks.getRenderer();
+            const jump = (apply: () => void) => { apply(); this.updateZoomReadout(); };
             const menu = new Menu();
-            menu.addItem(item => item.setTitle('Fit all events').setIcon('maximize-2').onClick(() => renderer?.fitToView()));
-            menu.addItem(item => item.setTitle('Fit visible groups').setIcon('rows-3').onClick(() => renderer?.fitToView()));
+            menu.addItem(item => item.setTitle('Fit every event').setIcon('maximize-2')
+                .onClick(() => jump(() => renderer?.fitToView())));
             menu.addSeparator();
-            menu.addItem(item => item.setTitle('Show a decade').setIcon('calendar-range').onClick(() => renderer?.zoomPresetYears(10)));
-            menu.addItem(item => item.setTitle('Show a century').setIcon('calendar-range').onClick(() => renderer?.zoomPresetYears(100)));
-            menu.addItem(item => item.setTitle('Jump to today').setIcon('calendar-clock').onClick(() => renderer?.moveToToday()));
+            menu.addItem(item => item.setTitle('Show a decade').setIcon('calendar-range')
+                .onClick(() => jump(() => renderer?.zoomPresetYears(10))));
+            menu.addItem(item => item.setTitle('Show a century').setIcon('calendar-range')
+                .onClick(() => jump(() => renderer?.zoomPresetYears(100))));
+            menu.addItem(item => item.setTitle('Jump to today').setIcon('calendar-clock')
+                .onClick(() => jump(() => renderer?.moveToToday())));
             menu.showAtMouseEvent(clickEvent);
         });
-        return btn;
+
+        const zoomIn = group.createEl('button', {
+            cls: 'clickable-icon storyteller-toolbar-btn',
+            attr: { 'aria-label': 'Zoom in', 'title': 'Show less time' }
+        });
+        setIcon(zoomIn, 'zoom-in');
+        zoomIn.addEventListener('click', () => {
+            this.callbacks.getRenderer()?.zoomBy(0.25);
+            this.updateZoomReadout();
+        });
+
+        this.updateZoomReadout();
+        return group;
     }
 
     /**
-     * Display options, named rather than iconified.
+     * Refresh the span readout. Wired to the renderer's draw loop so panning,
+     * pinching and the scroll wheel keep it honest, not just the buttons.
+     */
+    updateZoomReadout(): void {
+        if (!this.zoomReadoutEl?.isConnected) return;
+        const range = this.callbacks.getRenderer()?.getVisibleRange();
+        const text = range ? formatSpan(range.end.getTime() - range.start.getTime()) : '';
+        if (this.zoomReadoutEl.textContent !== text) this.zoomReadoutEl.setText(text);
+    }
+
+    /**
+     * The layers and the shape of the drawing, named rather than iconified.
      *
-     * These six were the least discoverable part of the old toolbar: toggles
-     * whose only clue was an icon and whose only feedback was a highlight.
-     * A menu states what each one does and shows its state as a checkmark.
+     * These were the least discoverable part of the old toolbar: toggles whose
+     * only clue was an icon and whose only feedback was a highlight. A menu
+     * states what each one does and shows its state as a checkmark. The badge
+     * on the button carries the part a menu otherwise hides, which layers are
+     * on, so the state is still readable without opening anything.
      */
     createDisplayMenu(container: HTMLElement, extras: DisplayMenuExtras): HTMLButtonElement {
         const btn = container.createEl('button', {
-            cls: 'storyteller-toolbar-btn storyteller-toolbar-btn-labelled',
-            attr: { 'aria-label': 'Display options', 'aria-haspopup': 'menu' }
+            cls: 'storyteller-toolbar-btn-labelled',
+            attr: { 'aria-haspopup': 'menu' }
         });
         const icon = btn.createSpan('storyteller-toolbar-btn-icon');
         setIcon(icon, 'sliders-horizontal');
-        btn.createSpan({ cls: 'storyteller-toolbar-btn-text', text: 'Display' });
+        btn.createSpan({ cls: 'storyteller-toolbar-btn-text', text: 'Show' });
+        const badge = btn.createSpan({ cls: 'storyteller-toolbar-badge' });
         const caret = btn.createSpan('storyteller-toolbar-caret');
         setIcon(caret, 'chevron-down');
+
+        // Only the three layers count here. Stacking, narrative order and
+        // density change how the same events are arranged, not what is on
+        // screen, so folding them into the number would make it mean nothing.
+        const layers = () => [
+            { name: 'Era backgrounds', on: this.state.showEras },
+            { name: 'Scenes', on: extras.getShowScenes() },
+            { name: 'Vault notes', on: extras.getShowWatchedNotes() }
+        ];
+
+        const syncBadge = () => {
+            const on = layers().filter(layer => layer.on);
+            badge.setText(String(on.length));
+            badge.toggleClass('is-empty', on.length === 0);
+            const summary = on.length ? on.map(layer => layer.name).join(', ') : 'no extra layers';
+            btn.setAttribute('aria-label', `Show: ${summary}`);
+            btn.setAttribute('title', `Showing ${summary}`);
+        };
+        syncBadge();
 
         btn.addEventListener('click', clickEvent => {
             const renderer = this.callbacks.getRenderer();
             const menu = new Menu();
             const check = (title: string, on: boolean, apply: () => void) => {
-                menu.addItem(item => item.setTitle(title).setChecked(on).onClick(() => { apply(); this.callbacks.onStateChange(); }));
+                menu.addItem(item => item.setTitle(title).setChecked(on).onClick(() => {
+                    apply();
+                    syncBadge();
+                    this.callbacks.onStateChange();
+                }));
             };
 
             check('Era backgrounds', this.state.showEras, () => {
@@ -500,11 +612,14 @@ export class TimelineControlsBuilder {
             });
             check('Scenes', extras.getShowScenes(), () => extras.setShowScenes(!extras.getShowScenes()));
             check('Vault notes', extras.getShowWatchedNotes(), () => extras.setShowWatchedNotes(!extras.getShowWatchedNotes()));
+            menu.addItem(item => item.setTitle('Manage eras…').setIcon('calendar-range')
+                .onClick(() => extras.onManageEras()));
+
+            menu.addSeparator();
             check('Stack overlapping events', this.state.stackEnabled, () => {
                 this.state.stackEnabled = !this.state.stackEnabled;
                 this.callbacks.onRendererUpdate();
             });
-            menu.addSeparator();
             check('Narrative order', this.state.narrativeOrder, () => {
                 this.state.narrativeOrder = !this.state.narrativeOrder;
                 renderer?.setNarrativeOrder(this.state.narrativeOrder);

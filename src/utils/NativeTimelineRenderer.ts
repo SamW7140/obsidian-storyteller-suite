@@ -28,6 +28,8 @@ export interface TimelineRendererOptions {
     narrativeOrder?: boolean;
     onConflictsDetected?: (conflicts: DetectedConflict[]) => void;
     onEventSelected?: (event: Event | null) => void;
+    /** Fired after each frame so a toolbar can mirror the visible range. */
+    onViewChange?: () => void;
 }
 
 export interface TimelineFilters {
@@ -131,7 +133,7 @@ export class NativeTimelineRenderer {
     private readonly plugin: StorytellerSuitePlugin;
     private readonly container: HTMLElement;
     private readonly calendarRegistry: CalendarRegistry;
-    private options: Required<Omit<TimelineRendererOptions, 'onConflictsDetected' | 'onEventSelected'>> & Pick<TimelineRendererOptions, 'onConflictsDetected' | 'onEventSelected'>;
+    private options: Required<Omit<TimelineRendererOptions, 'onConflictsDetected' | 'onEventSelected' | 'onViewChange'>> & Pick<TimelineRendererOptions, 'onConflictsDetected' | 'onEventSelected' | 'onViewChange'>;
     private filters: TimelineFilters = {};
     private events: Event[] = [];
     private locations: Location[] = [];
@@ -656,7 +658,11 @@ export class NativeTimelineRenderer {
 
     private scheduleDraw(): void {
         if (this.frame) return;
-        this.frame = (this.container.ownerDocument.defaultView || window).requestAnimationFrame(() => { this.frame = 0; this.draw(); });
+        this.frame = (this.container.ownerDocument.defaultView || window).requestAnimationFrame(() => {
+            this.frame = 0;
+            this.draw();
+            this.options.onViewChange?.();
+        });
     }
 
     private draw(): void {
