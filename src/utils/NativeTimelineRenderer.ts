@@ -553,23 +553,23 @@ export class NativeTimelineRenderer {
                 lane.maxEndPrefix.push(runningMax);
             }
 
-            // Right edge of the last chip placed on each row, in pixels.
+            // Packing runs in time, not in screen position, and covers every
+            // item rather than only the visible ones. Both matter: a chip's
+            // width in time is (width + gap) * pxToTime, which makes this exactly
+            // equivalent to comparing pixels, but unlike pixels it does not move
+            // when the view is panned. Packing what happens to be on screen made
+            // the row count, and so the lane's height, change as you scrolled,
+            // which shifted every lane below it mid-scroll.
+            const pxToTime = (this.viewEnd - this.viewStart) / Math.max(1, width - SIDEBAR_WIDTH);
             const rowEnds: number[] = [];
             lane.items.forEach(item => {
                 item.labelSuppressed = false;
-                // Only items on screen compete for rows. An off-screen item
-                // clamps to the viewport edge, and letting those pile up there
-                // would invent rows for things nobody can see.
-                if (item.end < this.viewStart || item.start > this.viewEnd) {
-                    item.row = 0;
-                    return;
-                }
                 const chipWidth = ctx ? this.chipWidth(ctx, item, minimum) : MAX_CHIP_WIDTH;
-                const left = this.chipLeft(item, chipWidth, width, chronology);
+                const reservation = (chipWidth + CHIP_GAP) * pxToTime;
                 let row = 0;
-                if (this.options.stackEnabled) while (row < rowEnds.length && rowEnds[row] > left - CHIP_GAP) row++;
+                if (this.options.stackEnabled) while (row < rowEnds.length && rowEnds[row] > item.start) row++;
                 item.row = row;
-                rowEnds[row] = left + chipWidth;
+                rowEnds[row] = Math.max(item.end, item.start + reservation);
             });
             lane.top = top;
             // Chronology mode hangs its chips below the axis baseline, so the
@@ -934,7 +934,9 @@ export class NativeTimelineRenderer {
             if (!alternateSides) ctx.fillText(tick.label, axisX - ctx.measureText(tick.label).width - 10, y + 4);
         });
 
-        const items = this.lanes.flatMap(lane => lane.items).filter(item => item.start >= this.viewStart && item.start <= this.viewEnd).sort((a, b) => a.start - b.start);
+        // Intersection, not containment: an event that began before the window
+        // but runs into it is still on screen and must not be dropped.
+        const items = this.lanes.flatMap(lane => lane.items).filter(item => item.end >= this.viewStart && item.start <= this.viewEnd).sort((a, b) => a.start - b.start);
         this.visibleItems = [];
         const placements = items.map((item, index) => {
             const desiredY = top + (item.start - this.viewStart) / (this.viewEnd - this.viewStart) * (bottom - top);
@@ -1240,30 +1242,70 @@ export class NativeTimelineRenderer {
         });
     }
 
+    /**
+     * Where an item sits, even when it was never drawn.
+     *
+     * An arrow needs both ends. Reading positions only off drawn items meant an
+     * arrow vanished the moment its source scrolled off, taking a visible
+     * dependency with it. Off-screen ends get a rectangle computed from their
+     * time and row instead, and the canvas clips the line for us.
+     */
+    private itemRect(item: NativeItem, lane: Lane, width: number): DOMRect {
+        if (item.rect) return item.rect;
+        const rowHeight = this.rowHeight();
+        const chronology = !this.options.ganttMode;
+        const x1 = this.timeToX(item.start, width);
+        const x2 = this.timeToX(item.end, width);
+        const top = lane.top - this.scrollTop;
+        if (chronology) {
+            const chipWidth = this.ctx ? this.chipWidth(this.ctx, item, MIN_CHRONOLOGY_CHIP_WIDTH) : MAX_CHIP_WIDTH;
+            return new DOMRect(x1 + 9, top + CHRONOLOGY_CHIP_TOP + item.row * rowHeight, chipWidth, rowHeight - 7);
+        }
+        const isPoint = Math.abs(x2 - x1) < 3;
+        const chipWidth = this.ctx ? this.chipWidth(this.ctx, item, MIN_CHIP_WIDTH) : MAX_CHIP_WIDTH;
+        return new DOMRect(
+            isPoint ? x1 - 7 : x1,
+            top + 7 + item.row * rowHeight,
+            isPoint ? chipWidth : Math.max(24, x2 - x1),
+            rowHeight - 7
+        );
+    }
+
     private drawConnectors(ctx: CanvasRenderingContext2D, width: number, _height: number): void {
-        const byKey = new Map<string, NativeItem[]>();
-        this.visibleItems.forEach(item => {
+        // Indexed over every item, not just the drawn ones, so an arrow keeps
+        // both ends when one of them scrolls out of view.
+        const byKey = new Map<string, { item: NativeItem; lane: Lane }[]>();
+        this.lanes.forEach(lane => lane.items.forEach(item => {
             [this.eventKey(item.event), item.event.name].forEach(key => {
-                const values = byKey.get(key) || []; values.push(item); byKey.set(key, values);
+                const values = byKey.get(key) || []; values.push({ item, lane }); byKey.set(key, values);
             });
-        });
+        }));
         ctx.save();
         ctx.strokeStyle = this.css('--interactive-accent', '#8b5cf6');
         ctx.lineWidth = 2;
         if (this.options.dependencyArrowStyle === 'dashed') ctx.setLineDash([8, 5]);
         if (this.options.dependencyArrowStyle === 'dotted') ctx.setLineDash([2, 4]);
+        const endsOf = (target: NativeItem, ref: string): { from: DOMRect; to: DOMRect } | null => {
+            const source = (byKey.get(ref) || [])[0];
+            const targetEntry = (byKey.get(this.eventKey(target.event)) || []).find(entry => entry.item === target);
+            if (!source || !targetEntry) return null;
+            return {
+                from: this.itemRect(source.item, source.lane, width),
+                to: this.itemRect(target, targetEntry.lane, width)
+            };
+        };
         if (this.options.ganttMode && this.options.showDependencies) {
-            this.visibleItems.forEach(target => (target.event.dependencies || []).forEach(ref => {
-                const source = (byKey.get(ref) || [])[0];
-                if (source?.rect && target.rect) this.arrow(ctx, source.rect.right, source.rect.y + source.rect.height / 2, target.rect.x, target.rect.y + target.rect.height / 2);
-            }));
+            this.lanes.forEach(lane => lane.items.forEach(target => (target.event.dependencies || []).forEach(ref => {
+                const ends = endsOf(target, ref);
+                if (ends) this.arrow(ctx, ends.from.right, ends.from.y + ends.from.height / 2, ends.to.x, ends.to.y + ends.to.height / 2);
+            })));
         }
         if (this.options.narrativeOrder) {
-            this.visibleItems.forEach(target => {
+            this.lanes.forEach(lane => lane.items.forEach(target => {
                 const ref = target.event.narrativeMarkers?.targetEvent;
-                const source = ref ? (byKey.get(ref) || [])[0] : undefined;
-                if (source?.rect && target.rect) this.curve(ctx, source.rect, target.rect);
-            });
+                const ends = ref ? endsOf(target, ref) : null;
+                if (ends) this.curve(ctx, ends.from, ends.to);
+            }));
         }
         ctx.restore();
     }
