@@ -465,7 +465,7 @@ const FRONTMATTER_LINK_ONLY_SCALAR_FIELDS = new Set([
     enableOneStoryMode: false,
     oneStoryBaseFolder: 'StorytellerSuite',
     customTodayISO: undefined,
-    defaultTimelineGroupMode: 'none',
+    defaultTimelineGroupMode: 'location',
     defaultTimelineZoomPreset: 'none',
     defaultTimelineStack: true,
     defaultTimelineDensity: 50,

@@ -51,7 +51,7 @@ export class TimelineControlsBuilder {
         return {
             ganttMode: false,
             timelineOrientation: 'horizontal',
-            groupMode: (plugin.settings.defaultTimelineGroupMode || 'none'),
+            groupMode: (plugin.settings.defaultTimelineGroupMode || 'location'),
             filters: {},
             stackEnabled: plugin.settings.defaultTimelineStack ?? true,
             density: plugin.settings.defaultTimelineDensity ?? 50,

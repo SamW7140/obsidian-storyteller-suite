@@ -1,6 +1,6 @@
 import { App, Notice, TFile } from 'obsidian';
 import StorytellerSuitePlugin from '../main';
-import type { Event, Location, Scene, TimelineFork, TimelineTrack } from '../types';
+import type { Character, Event, Location, Scene, TimelineFork, TimelineTrack } from '../types';
 import { EventModal } from '../modals/EventModal';
 import { parseEventDate, toMillis } from './DateParsing';
 import type { DetectedConflict } from './ConflictDetector';
@@ -129,6 +129,7 @@ export class NativeTimelineRenderer {
     private filters: TimelineFilters = {};
     private events: Event[] = [];
     private locations: Location[] = [];
+    private characters: Character[] = [];
     private scenes: Scene[] = [];
     private watchedNotes: Array<{ name: string; date: string; filePath: string }> = [];
     private showScenes = false;
@@ -178,6 +179,7 @@ export class NativeTimelineRenderer {
     async initialize(): Promise<void> {
         this.events = await this.plugin.listEvents();
         this.locations = await this.plugin.listLocations();
+        this.characters = await this.plugin.listCharacters();
         await this.loadOptionalSources();
         this.mount();
         this.rebuild(true);
@@ -186,6 +188,7 @@ export class NativeTimelineRenderer {
     async refresh(): Promise<void> {
         this.events = await this.plugin.listEvents();
         this.locations = await this.plugin.listLocations();
+        this.characters = await this.plugin.listCharacters();
         await this.loadOptionalSources();
         this.rebuild(false);
     }
@@ -587,11 +590,16 @@ export class NativeTimelineRenderer {
     private groupTargets(event: Event): Array<{ id: string; label: string; color: string; explicitColor?: boolean }> {
         const mode = this.options.groupMode;
         if (mode === 'character') {
-            const chars = event.characters?.length ? Array.from(new Set(event.characters)) : ['No character'];
-            return chars.map((name, i) => ({ id: `character:${name}`, label: name, color: this.palette[i % this.palette.length] }));
+            // Resolve before de-duplicating, so an event referring to someone by
+            // id and another by name land in the same lane.
+            const resolved = event.characters?.length
+                ? event.characters.map(value => this.resolveCharacterName(value))
+                : ['No character'];
+            const chars = Array.from(new Set(resolved));
+            return chars.map(name => ({ id: `character:${name}`, label: name, color: this.colorFor(name) }));
         }
         if (mode === 'location') {
-            const name = event.location || 'No location';
+            const name = event.location ? this.resolveLocationName(event.location) : 'No location';
             return [{ id: `location:${name}`, label: name, color: this.colorFor(name) }];
         }
         if (mode === 'group') {
@@ -797,7 +805,9 @@ export class NativeTimelineRenderer {
         if (top > height || top + lane.height < this.axisHeight()) return;
         ctx.fillStyle = this.css('--background-secondary-alt', '#18202d');
         ctx.fillRect(0, top, SIDEBAR_WIDTH, lane.height);
-        ctx.fillStyle = this.css('--text-normal', '#e5e7eb');
+        // The lane name takes the lane's colour, so a row in the sidebar can be
+        // matched to its markers out on the timeline without counting rows.
+        ctx.fillStyle = lane.color;
         ctx.font = `600 12px ${this.css('--font-interface', 'sans-serif')}`;
         ctx.fillText(this.truncate(ctx, lane.label, SIDEBAR_WIDTH - 24), 13, top + 22);
         ctx.strokeStyle = this.css('--background-modifier-border', '#374151');
@@ -829,7 +839,9 @@ export class NativeTimelineRenderer {
         if (top > height || top + lane.height < this.axisHeight()) return;
         ctx.fillStyle = this.css('--background-secondary-alt', '#18202d');
         ctx.fillRect(0, top, SIDEBAR_WIDTH, lane.height);
-        ctx.fillStyle = this.css('--text-normal', '#e5e7eb');
+        // The lane name takes the lane's colour, so a row in the sidebar can be
+        // matched to its markers out on the timeline without counting rows.
+        ctx.fillStyle = lane.color;
         ctx.font = `600 12px ${this.css('--font-interface', 'sans-serif')}`;
         ctx.fillText(this.truncate(ctx, lane.label, SIDEBAR_WIDTH - 24), 13, top + 22);
 
@@ -891,7 +903,7 @@ export class NativeTimelineRenderer {
             }
             ctx.globalAlpha = 1;
             this.drawPointMarker(ctx, pointX, baselineY, item);
-            this.drawItem(ctx, item, true);
+            this.drawItem(ctx, item, true, undefined, false);
         }
     }
 
@@ -1088,7 +1100,12 @@ export class NativeTimelineRenderer {
         return calendar.epochLabel ? `${year} ${calendar.epochLabel}` : String(year);
     }
 
-    private drawItem(ctx: CanvasRenderingContext2D, item: NativeItem, isPoint: boolean, labelOverride?: string): void {
+    /**
+     * @param withMarker draw the marker inside the chip. False in chronology
+     * mode, where the same event already has a marker on the axis and drawing a
+     * second one gives every milestone two stars.
+     */
+    private drawItem(ctx: CanvasRenderingContext2D, item: NativeItem, isPoint: boolean, labelOverride?: string, withMarker = true): void {
         const rect = item.rect!;
         ctx.save();
         ctx.globalAlpha = item.inherited ? 0.45 : 1;
@@ -1103,21 +1120,23 @@ export class NativeTimelineRenderer {
             if (item.approximate) ctx.setLineDash([3, 3]);
             ctx.stroke();
             ctx.setLineDash([]);
-            ctx.fillStyle = this.markerColor(item);
-            const markerX = rect.x + 10;
-            const markerY = rect.y + rect.height / 2;
-            if (item.event.isMilestone) {
-                this.starPath(ctx, markerX, markerY, 6.5);
-                ctx.fill();
-                if (!item.customColor) {
-                    ctx.strokeStyle = this.css('--sts-timeline-milestone-edge', MILESTONE_GOLD_EDGE);
-                    ctx.lineWidth = 1;
-                    ctx.stroke();
+            if (withMarker) {
+                ctx.fillStyle = this.markerColor(item);
+                const markerX = rect.x + 10;
+                const markerY = rect.y + rect.height / 2;
+                if (item.event.isMilestone) {
+                    this.starPath(ctx, markerX, markerY, 6.5);
+                    ctx.fill();
+                    if (!item.customColor) {
+                        ctx.strokeStyle = this.css('--sts-timeline-milestone-edge', MILESTONE_GOLD_EDGE);
+                        ctx.lineWidth = 1;
+                        ctx.stroke();
+                    }
+                } else {
+                    ctx.beginPath();
+                    ctx.arc(markerX, markerY, 4, 0, Math.PI * 2);
+                    ctx.fill();
                 }
-            } else {
-                ctx.beginPath();
-                ctx.arc(markerX, markerY, 4, 0, Math.PI * 2);
-                ctx.fill();
             }
         } else {
             ctx.fillStyle = accent;
@@ -1137,8 +1156,9 @@ export class NativeTimelineRenderer {
             }
         }
         ctx.globalAlpha = 1;
-        const labelX = isPoint ? rect.x + 22 : rect.x + 6;
-        const available = isPoint ? Math.max(0, rect.width - 28) : Math.max(0, rect.width - 12);
+        const markerInset = isPoint && withMarker;
+        const labelX = markerInset ? rect.x + 22 : rect.x + 6;
+        const available = markerInset ? Math.max(0, rect.width - 28) : Math.max(0, rect.width - 12);
         if (available > 18) {
             const severity = this.conflictSeverity(item.event);
             ctx.fillStyle = severity === 'error'
@@ -1598,6 +1618,20 @@ export class NativeTimelineRenderer {
         return match?.name || value;
     }
 
+    /**
+     * A character's display name.
+     *
+     * Events store either an id or a name depending on when and how they were
+     * written, which showed up as raw ids like char-sera-vale in the lane list,
+     * and worse, as two lanes for one character when some of their events used
+     * the id and others the name.
+     */
+    private resolveCharacterName(value: string): string {
+        const match = this.characters.find(character => character.id === value)
+            || this.characters.find(character => character.name === value);
+        return match?.name || value;
+    }
+
     private eventLocations(event: Event): string[] {
         const sceneLocations = (event as TimelineEvent)._sceneLocations;
         if (sceneLocations?.length) return sceneLocations;
@@ -1702,7 +1736,32 @@ export class NativeTimelineRenderer {
     private niceTimeStep(raw: number): number { const units = [60_000, 5 * 60_000, 15 * 60_000, 3_600_000, 6 * 3_600_000, DAY_MS, 7 * DAY_MS, 30 * DAY_MS, 90 * DAY_MS, YEAR_MS, 5 * YEAR_MS, 10 * YEAR_MS, 100 * YEAR_MS, 1000 * YEAR_MS]; return units.find(unit => unit >= raw) || Math.ceil(raw / (1000 * YEAR_MS)) * 1000 * YEAR_MS; }
     private formatTick(value: number, step: number): string { const date = new Date(value); if (step >= YEAR_MS) return String(date.getUTCFullYear()); if (step >= DAY_MS) return date.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: step < 30 * DAY_MS ? 'numeric' : undefined, timeZone: 'UTC' }); return date.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit', timeZone: 'UTC' }); }
     private searchScore(event: Event, query: string): number { const name = event.name.toLowerCase(); const all = [event.name, event.description, event.location, event.status, ...(event.characters || []), ...(event.groups || []), ...(event.tags || [])].filter(Boolean).join(' ').toLowerCase(); if (!all.includes(query)) return -1; if (name === query) return 1000; if (name.startsWith(query)) return 800; if (name.includes(query)) return 500; return 100; }
-    private arrow(ctx: CanvasRenderingContext2D, x1: number, y1: number, x2: number, y2: number): void { const mid = Math.max(x1 + 18, (x1 + x2) / 2); ctx.beginPath(); ctx.moveTo(x1, y1); ctx.bezierCurveTo(mid, y1, mid, y2, x2, y2); ctx.stroke(); ctx.beginPath(); ctx.moveTo(x2 - 7, y2 - 4); ctx.lineTo(x2, y2); ctx.lineTo(x2 - 7, y2 + 4); ctx.stroke(); }
+    /**
+     * Dependency arrow from one item to another.
+     *
+     * Two items on the same row used to be joined by a straight horizontal line
+     * at their shared centre height, which ran through the label of everything
+     * standing between them. Same-row arrows now dip below the row and come back
+     * up, so the line passes under the intervening chips instead of across them.
+     */
+    private arrow(ctx: CanvasRenderingContext2D, x1: number, y1: number, x2: number, y2: number): void {
+        ctx.beginPath();
+        ctx.moveTo(x1, y1);
+        if (Math.abs(y1 - y2) < 2) {
+            const dip = y1 + this.rowHeight() * 0.55;
+            const inset = Math.min(60, Math.max(12, (x2 - x1) * 0.35));
+            ctx.bezierCurveTo(x1 + inset, dip, x2 - inset, dip, x2, y2);
+        } else {
+            const mid = Math.max(x1 + 18, (x1 + x2) / 2);
+            ctx.bezierCurveTo(mid, y1, mid, y2, x2, y2);
+        }
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.moveTo(x2 - 7, y2 - 4);
+        ctx.lineTo(x2, y2);
+        ctx.lineTo(x2 - 7, y2 + 4);
+        ctx.stroke();
+    }
     private roundedRect(ctx: CanvasRenderingContext2D, x: number, y: number, width: number, height: number, radius: number): void { const r = Math.min(radius, width / 2, height / 2); ctx.beginPath(); ctx.moveTo(x + r, y); ctx.lineTo(x + width - r, y); ctx.quadraticCurveTo(x + width, y, x + width, y + r); ctx.lineTo(x + width, y + height - r); ctx.quadraticCurveTo(x + width, y + height, x + width - r, y + height); ctx.lineTo(x + r, y + height); ctx.quadraticCurveTo(x, y + height, x, y + height - r); ctx.lineTo(x, y + r); ctx.quadraticCurveTo(x, y, x + r, y); ctx.closePath(); }
     private curve(ctx: CanvasRenderingContext2D, source: DOMRect, target: DOMRect): void { ctx.save(); ctx.setLineDash([5, 4]); this.arrow(ctx, source.right, source.y + source.height / 2, target.x, target.y + target.height / 2); ctx.restore(); }
     private resizeCanvas(): void { if (!this.canvas || !this.root || !this.ctx) return; const ratio = Math.max(1, window.devicePixelRatio || 1); const width = Math.max(1, this.root.clientWidth); const height = Math.max(1, this.root.clientHeight); this.canvas.width = Math.round(width * ratio); this.canvas.height = Math.round(height * ratio); this.canvas.style.width = `${width}px`; this.canvas.style.height = `${height}px`; this.ctx.setTransform(ratio, 0, 0, ratio, 0, 0); }

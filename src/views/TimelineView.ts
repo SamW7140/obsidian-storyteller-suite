@@ -803,7 +803,7 @@ export class TimelineView extends ItemView {
             this.currentState = {
                 ganttMode: state.ganttMode === true,
                 timelineOrientation: state.timelineOrientation === 'vertical' ? 'vertical' : 'horizontal',
-                groupMode: isGroupMode(state.groupMode) ? state.groupMode : 'none',
+                groupMode: isGroupMode(state.groupMode) ? state.groupMode : (this.plugin.settings.defaultTimelineGroupMode || 'location'),
                 stackEnabled: typeof state.stackEnabled === 'boolean' ? state.stackEnabled : true,
                 density: typeof state.density === 'number' ? state.density : 50,
                 editMode: state.editMode === true,
