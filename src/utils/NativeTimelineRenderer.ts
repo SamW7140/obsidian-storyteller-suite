@@ -1743,13 +1743,18 @@ export class NativeTimelineRenderer {
             return;
         }
 
+        // Shift zooms, a plain wheel scrolls. The reverse is common in mapping
+        // apps but wrong here: this lives in a scrollable note pane, where a
+        // bare wheel is expected to move the content, not rescale it.
         if (event.shiftKey) {
-            this.panBy(deltaY, plotSize);
-        } else {
             const pointer = vertical
                 ? Math.max(0, event.offsetY - 28)
                 : Math.max(0, event.offsetX - SIDEBAR_WIDTH);
             this.zoomAt(deltaY, pointer, plotSize);
+        } else if (canScrollLanes) {
+            this.scrollTop = Math.max(0, Math.min(this.maxLaneScroll(), this.scrollTop + deltaY));
+        } else {
+            this.panBy(deltaY, plotSize);
         }
         this.scheduleDraw();
     }
