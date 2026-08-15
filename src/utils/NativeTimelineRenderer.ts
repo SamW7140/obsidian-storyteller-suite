@@ -84,6 +84,8 @@ interface Lane {
     /** True when `color` was chosen by the user, not taken from the palette. */
     explicitColor?: boolean;
     items: NativeItem[];
+    /** Running maximum of item ends, parallel to `items`. Non-decreasing. */
+    maxEndPrefix?: number[];
     top: number;
     height: number;
     branchDepth?: number;
@@ -110,6 +112,8 @@ const MIN_CHIP_WIDTH = 88;
 const MIN_CHRONOLOGY_CHIP_WIDTH = 92;
 /** Breathing room kept between two chips on the same row. */
 const CHIP_GAP = 8;
+/** Distance from a chronology lane's top to its first row of chips. */
+const CHRONOLOGY_CHIP_TOP = 34;
 /** A wheel notch in line mode is worth roughly this many pixels. */
 const WHEEL_LINE_HEIGHT = 16;
 /** Milestone gold, overridable through --sts-timeline-milestone. */
@@ -508,30 +512,68 @@ export class NativeTimelineRenderer {
         return parts.join(' ');
     }
 
+    /**
+     * Left edge of an item's chip, in pixels.
+     *
+     * Row packing has to place chips using the same arithmetic that draws them,
+     * including the clamp that keeps a chip on screen. Packing in time and
+     * drawing in pixels is what let chips overlap even with stacking on: two
+     * events far enough apart in time can still be clamped to the same place.
+     */
+    private chipLeft(item: NativeItem, chipWidth: number, width: number, chronology: boolean): number {
+        const pointX = this.timeToX(item.start, width);
+        if (chronology) {
+            return Math.min(Math.max(SIDEBAR_WIDTH + 4, pointX + 9), width - chipWidth - 4);
+        }
+        const x2 = this.timeToX(item.end, width);
+        return Math.abs(x2 - pointX) < 3 ? pointX - 7 : pointX;
+    }
+
     private layoutRows(): void {
         const rowHeight = this.rowHeight();
-        const plotWidth = Math.max(1, (this.root?.clientWidth || 900) - SIDEBAR_WIDTH);
-        const pxToTime = (this.viewEnd - this.viewStart) / plotWidth;
+        const width = this.root?.clientWidth || 900;
         const ctx = this.ctx;
         const axisHeight = this.axisHeight();
+        const chronology = !this.options.ganttMode;
+        const minimum = chronology ? MIN_CHRONOLOGY_CHIP_WIDTH : MIN_CHIP_WIDTH;
         let top = axisHeight;
         this.lanes.forEach(lane => {
             lane.items.sort((a, b) => a.start - b.start || a.end - b.end);
+
+            // Running maximum of every end seen so far. Monotonic, so the draw
+            // pass can binary search it for the first item that could still
+            // reach into the viewport from the left.
+            lane.maxEndPrefix = [];
+            let runningMax = Number.NEGATIVE_INFINITY;
+            for (const item of lane.items) {
+                runningMax = Math.max(runningMax, item.end);
+                lane.maxEndPrefix.push(runningMax);
+            }
+
+            // Right edge of the last chip placed on each row, in pixels.
             const rowEnds: number[] = [];
             lane.items.forEach(item => {
-                // Reserve the space this label really needs. Falling back to the
-                // old flat estimate only matters before the canvas context
-                // exists, when nothing is on screen to collide yet.
-                const width = ctx ? this.chipWidth(ctx, item, MIN_CHIP_WIDTH) : MAX_CHIP_WIDTH;
-                const reservation = (width + CHIP_GAP) * pxToTime;
-                let row = 0;
-                if (this.options.stackEnabled) while (row < rowEnds.length && rowEnds[row] > item.start) row++;
-                item.row = row;
                 item.labelSuppressed = false;
-                rowEnds[row] = Math.max(item.end, item.start + reservation);
+                // Only items on screen compete for rows. An off-screen item
+                // clamps to the viewport edge, and letting those pile up there
+                // would invent rows for things nobody can see.
+                if (item.end < this.viewStart || item.start > this.viewEnd) {
+                    item.row = 0;
+                    return;
+                }
+                const chipWidth = ctx ? this.chipWidth(ctx, item, minimum) : MAX_CHIP_WIDTH;
+                const left = this.chipLeft(item, chipWidth, width, chronology);
+                let row = 0;
+                if (this.options.stackEnabled) while (row < rowEnds.length && rowEnds[row] > left - CHIP_GAP) row++;
+                item.row = row;
+                rowEnds[row] = left + chipWidth;
             });
             lane.top = top;
-            lane.height = Math.max(rowHeight + 12, rowEnds.length * rowHeight + 12);
+            // Chronology mode hangs its chips below the axis baseline, so the
+            // lane has to reserve that offset on top of the rows themselves or
+            // a tall stack runs past the bottom of its own lane.
+            const chipOffset = chronology ? CHRONOLOGY_CHIP_TOP : 0;
+            lane.height = Math.max(rowHeight + 12, chipOffset + rowEnds.length * rowHeight + 12);
             top += lane.height;
         });
         if (this.lanes.length === 1 && this.root) {
@@ -763,8 +805,8 @@ export class NativeTimelineRenderer {
         const rowHeight = this.rowHeight();
         const leftTime = this.viewStart;
         const rightTime = this.viewEnd;
-        const startIndex = this.lowerBound(lane.items, leftTime);
-        for (let i = Math.max(0, startIndex - 1); i < lane.items.length; i++) {
+        const startIndex = this.firstVisible(lane, leftTime);
+        for (let i = startIndex; i < lane.items.length; i++) {
             const item = lane.items[i];
             if (item.start > rightTime) break;
             if (item.end < leftTime) continue;
@@ -800,24 +842,27 @@ export class NativeTimelineRenderer {
         // Right edge of the last chip drawn on each row, so a chip that would
         // land on top of its neighbour can stand down.
         const rowRightEdges: number[] = [];
-        const startIndex = this.lowerBound(lane.items, this.viewStart);
-        for (let i = Math.max(0, startIndex - 1); i < lane.items.length; i++) {
+        const startIndex = this.firstVisible(lane, this.viewStart);
+        for (let i = startIndex; i < lane.items.length; i++) {
             const item = lane.items[i];
             if (item.start > this.viewEnd) break;
             if (item.end < this.viewStart) continue;
             const pointX = this.timeToX(item.start, width);
             const endX = this.timeToX(item.end, width);
-            const chipY = top + 34 + item.row * rowHeight;
+            const chipY = top + CHRONOLOGY_CHIP_TOP + item.row * rowHeight;
             const chipWidth = this.chipWidth(ctx, item, MIN_CHRONOLOGY_CHIP_WIDTH);
             const chipHeight = rowHeight - 7;
-            const chipX = Math.min(Math.max(SIDEBAR_WIDTH + 4, pointX + 9), width - chipWidth - 4);
+            const chipX = this.chipLeft(item, chipWidth, width, true);
 
-            // Two events close enough together to overlap would otherwise print
-            // one label on top of the other. Whoever got here first keeps the
-            // chip; the rest stay on the axis as markers, which reads as a dense
-            // cluster rather than as a smear of text.
+            // With stacking on, layoutRows has already given every visible item
+            // a row it fits in, so nothing needs to stand down. Only the
+            // deliberately single-row case can still collide, and there the
+            // later chip drops to its axis marker rather than printing over its
+            // neighbour.
             const rowRight = rowRightEdges[item.row];
-            const collides = rowRight !== undefined && chipX < rowRight + CHIP_GAP;
+            const collides = !this.options.stackEnabled
+                && rowRight !== undefined
+                && chipX < rowRight + CHIP_GAP;
             item.labelSuppressed = collides;
 
             // Hit target follows what was drawn. A suppressed item answers to
@@ -1632,6 +1677,28 @@ export class NativeTimelineRenderer {
     }
     private truncate(ctx: CanvasRenderingContext2D, value: string, width: number): string { if (ctx.measureText(value).width <= width) return value; let text = value; while (text.length > 1 && ctx.measureText(`${text}…`).width > width) text = text.slice(0, -1); return `${text}…`; }
     private lowerBound(items: NativeItem[], target: number): number { let low = 0, high = items.length; while (low < high) { const mid = (low + high) >>> 1; if (items[mid].start < target) low = mid + 1; else high = mid; } return low; }
+
+    /**
+     * Index of the first item that can still reach into the viewport.
+     *
+     * Items are sorted by start, so binary searching starts and then stepping
+     * back one only catches a single earlier item. Anything that began further
+     * back but runs long was dropped, which read as events disappearing off the
+     * left as you zoomed. The prefix maximum of ends is non-decreasing, so it
+     * can be searched directly for the earliest item whose end still lands in
+     * view.
+     */
+    private firstVisible(lane: Lane, viewStart: number): number {
+        const prefix = lane.maxEndPrefix;
+        if (!prefix || prefix.length !== lane.items.length) return 0;
+        let low = 0, high = prefix.length;
+        while (low < high) {
+            const mid = (low + high) >>> 1;
+            if (prefix[mid] < viewStart) low = mid + 1;
+            else high = mid;
+        }
+        return low;
+    }
     private niceTimeStep(raw: number): number { const units = [60_000, 5 * 60_000, 15 * 60_000, 3_600_000, 6 * 3_600_000, DAY_MS, 7 * DAY_MS, 30 * DAY_MS, 90 * DAY_MS, YEAR_MS, 5 * YEAR_MS, 10 * YEAR_MS, 100 * YEAR_MS, 1000 * YEAR_MS]; return units.find(unit => unit >= raw) || Math.ceil(raw / (1000 * YEAR_MS)) * 1000 * YEAR_MS; }
     private formatTick(value: number, step: number): string { const date = new Date(value); if (step >= YEAR_MS) return String(date.getUTCFullYear()); if (step >= DAY_MS) return date.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: step < 30 * DAY_MS ? 'numeric' : undefined, timeZone: 'UTC' }); return date.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit', timeZone: 'UTC' }); }
     private searchScore(event: Event, query: string): number { const name = event.name.toLowerCase(); const all = [event.name, event.description, event.location, event.status, ...(event.characters || []), ...(event.groups || []), ...(event.tags || [])].filter(Boolean).join(' ').toLowerCase(); if (!all.includes(query)) return -1; if (name === query) return 1000; if (name.startsWith(query)) return 800; if (name.includes(query)) return 500; return 100; }
