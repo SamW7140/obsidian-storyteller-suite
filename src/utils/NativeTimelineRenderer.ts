@@ -525,9 +525,12 @@ export class NativeTimelineRenderer {
      */
     private chipLeft(item: NativeItem, chipWidth: number, width: number, chronology: boolean): number {
         const pointX = this.timeToX(item.start, width);
-        if (chronology) {
-            return Math.min(Math.max(SIDEBAR_WIDTH + 4, pointX + 9), width - chipWidth - 4);
-        }
+        // Deliberately unclamped. Pinning a chip to the viewport edge made it
+        // slide along as you scrolled and then jump when its event finally came
+        // back on screen. A chip belongs at its event's position and should
+        // simply leave the view; the plot area is clipped so it does not spill
+        // over the lane sidebar on the way out.
+        if (chronology) return pointX + 9;
         const x2 = this.timeToX(item.end, width);
         return Math.abs(x2 - pointX) < 3 ? pointX - 7 : pointX;
     }
@@ -815,6 +818,12 @@ export class NativeTimelineRenderer {
         const rowHeight = this.rowHeight();
         const leftTime = this.viewStart;
         const rightTime = this.viewEnd;
+        // Items sit at their true position now, so anything leaving the view has
+        // to be clipped rather than pinned, or it would paint over the sidebar.
+        ctx.save();
+        ctx.beginPath();
+        ctx.rect(SIDEBAR_WIDTH, this.axisHeight(), Math.max(0, width - SIDEBAR_WIDTH), height);
+        ctx.clip();
         const startIndex = this.firstVisible(lane, leftTime);
         for (let i = startIndex; i < lane.items.length; i++) {
             const item = lane.items[i];
@@ -832,6 +841,7 @@ export class NativeTimelineRenderer {
             this.visibleItems.push(item);
             this.drawItem(ctx, item, isPoint);
         }
+        ctx.restore();
     }
 
     private drawChronologyLane(ctx: CanvasRenderingContext2D, lane: Lane, width: number, height: number): void {
@@ -854,6 +864,12 @@ export class NativeTimelineRenderer {
         // Right edge of the last chip drawn on each row, so a chip that would
         // land on top of its neighbour can stand down.
         const rowRightEdges: number[] = [];
+        // Chips sit at their true position, so ones leaving the view are clipped
+        // to the plot area rather than pinned to its edge.
+        ctx.save();
+        ctx.beginPath();
+        ctx.rect(SIDEBAR_WIDTH, this.axisHeight(), Math.max(0, width - SIDEBAR_WIDTH), height);
+        ctx.clip();
         const startIndex = this.firstVisible(lane, this.viewStart);
         for (let i = startIndex; i < lane.items.length; i++) {
             const item = lane.items[i];
@@ -905,6 +921,7 @@ export class NativeTimelineRenderer {
             this.drawPointMarker(ctx, pointX, baselineY, item);
             this.drawItem(ctx, item, true, undefined, false);
         }
+        ctx.restore();
     }
 
     private drawVerticalTimeline(ctx: CanvasRenderingContext2D, width: number, height: number): void {
