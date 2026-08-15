@@ -166,234 +166,112 @@ export class TimelineView extends ItemView {
         // Setup resize observer for responsive layout
         this.setupResizeObserver();
     }
-
     /**
-     * Build toolbar with icon buttons
+     * Build the toolbar.
+     *
+     * Grouped rather than flat. The old row put twenty-three controls side by
+     * side, most of them icon-only, so nothing signalled which control belonged
+     * with which and a first-time reader had no way in. Now: what you are
+     * looking at, how it is framed, how it is drawn, then search and the rest.
      */
     private buildToolbar(): void {
         if (!this.toolbarEl) return;
         this.toolbarEl.empty();
 
-        // Use shared controls builder for common controls
-        this.controlsBuilder.createGanttToggle(this.toolbarEl);
-        this.controlsBuilder.createOrientationToggle(this.toolbarEl);
-        this.controlsBuilder.createZoomInButton(this.toolbarEl);
-        this.controlsBuilder.createZoomOutButton(this.toolbarEl);
-        this.controlsBuilder.createGroupingDropdown(this.toolbarEl);
+        // What am I looking at
+        const scope = this.toolbarEl.createDiv('storyteller-toolbar-group');
+        this.controlsBuilder.createViewModeSegment(scope);
+        this.buildGroupingField(scope);
+        this.buildTrackField(scope);
 
-        // Fork selector dropdown
-        const forkContainer = this.toolbarEl.createDiv('storyteller-fork-container');
-        const forkSelect = forkContainer.createEl('select', {
-            cls: 'dropdown storyteller-fork-select',
-            attr: { 'aria-label': 'Timeline fork' }
+        // How is it framed
+        const frame = this.toolbarEl.createDiv('storyteller-toolbar-group');
+        this.controlsBuilder.createZoomOutButton(frame);
+        this.controlsBuilder.createZoomInButton(frame);
+        this.controlsBuilder.createFitMenu(frame);
+
+        // How is it drawn
+        const display = this.toolbarEl.createDiv('storyteller-toolbar-group');
+        this.controlsBuilder.createEditModeToggle(display);
+        this.controlsBuilder.createDisplayMenu(display, {
+            getShowScenes: () => this.showScenes,
+            setShowScenes: value => { this.showScenes = value; this.renderer?.setShowScenes(value); },
+            getShowWatchedNotes: () => this.showWatchedNotes,
+            setShowWatchedNotes: value => { this.showWatchedNotes = value; this.renderer?.setShowWatchedNotes(value); }
         });
 
-        // Add main timeline option
-        const mainOption = forkSelect.createEl('option', {
-            value: 'main',
-            text: 'Main timeline'
-        });
-        mainOption.selected = !this.currentState.currentForkId;
+        // Pushed right: conflicts, search, overflow
+        const trailing = this.toolbarEl.createDiv('storyteller-toolbar-group storyteller-toolbar-trailing');
+        this.buildConflictBadge(trailing);
+        this.buildSearchField(trailing);
+        this.buildOverflowButton(trailing);
+    }
 
-        // Add fork options
-        const forks = this.plugin.getTimelineForks();
-        if (forks.length > 0) {
-            const compareOption = forkSelect.createEl('option', {
-                value: '__compare__',
-                text: 'Compare branches'
-            });
-            compareOption.selected = this.currentState.currentForkId === '__compare__';
-        }
-        forks.forEach(fork => {
-            const option = forkSelect.createEl('option', {
-                value: fork.id,
-                text: fork.name
-            });
-            if (fork.color) {
-                option.setCssStyles({ color: fork.color });
-            }
-            option.selected = this.currentState.currentForkId === fork.id;
-        });
+    /** A labelled control, so the toolbar reads as words rather than glyphs. */
+    private labelledField(container: HTMLElement, label: string): HTMLElement {
+        const field = container.createDiv('storyteller-toolbar-field');
+        field.createSpan({ cls: 'storyteller-toolbar-field-label', text: label });
+        return field;
+    }
 
-        forkSelect.addEventListener('change', () => { void (async () => {
-            const selectedFork = forkSelect.value;
-            this.currentState.currentForkId = selectedFork === 'main' ? undefined : selectedFork;
+    private buildGroupingField(container: HTMLElement): void {
+        const field = this.labelledField(container, 'Group');
+        this.controlsBuilder.createGroupingDropdown(field);
+    }
 
-            if (selectedFork === 'main') {
-                // Show all events - clear any fork filters
-                this.currentState.filters = {
-                    ...this.currentState.filters,
-                    forkId: undefined
-                };
-            } else if (selectedFork === '__compare__') {
-                this.currentState.filters = {
-                    ...this.currentState.filters,
-                    forkId: '__compare__'
-                };
-            } else {
-                // Filter to fork-specific events
-                const fork = this.plugin.getTimelineFork(selectedFork);
-                if (fork) {
-                    this.currentState.filters = {
-                        ...this.currentState.filters,
-                        forkId: fork.id
-                    };
-                }
-            }
-
-            // Rebuild timeline with new filters
-            await this.buildTimeline();
-            this.updateFooterStatus();
-        })(); });
-
-        // Conflict warnings badge (if conflicts exist)
-        const conflicts = this.plugin.settings.timelineConflicts || [];
-        const activeConflicts = conflicts.filter(c => !c.dismissed);
-        if (activeConflicts.length > 0) {
-            const conflictBadge = this.toolbarEl.createEl('button', {
-                cls: 'clickable-icon storyteller-toolbar-btn storyteller-conflict-badge',
-                attr: {
-                    'aria-label': `${activeConflicts.length} timeline conflicts`,
-                    'title': `View ${activeConflicts.length} timeline conflict(s)`
-                }
-            });
-            const badgeIcon = conflictBadge.createSpan('storyteller-badge-icon');
-            setIcon(badgeIcon, 'alert-triangle');
-            conflictBadge.createSpan({ text: String(activeConflicts.length), cls: 'storyteller-badge-count' });
-            conflictBadge.addEventListener('click', () => { void (async () => {
-                const { ConflictListModal } = await import('../modals/ConflictListModal');
-                new ConflictListModal(
-                    this.app,
-                    this.plugin,
-                    conflicts,
-                    async () => {
-                        await this.refresh();
-                    }
-                ).open();
-            })(); });
-        }
-
-        // Use shared controls for zoom and navigation buttons
-        this.controlsBuilder.createFitButton(this.toolbarEl);
-        this.controlsBuilder.createFitGroupsButton(this.toolbarEl);
-        this.controlsBuilder.createDecadeButton(this.toolbarEl);
-        this.controlsBuilder.createCenturyButton(this.toolbarEl);
-        this.controlsBuilder.createTodayButton(this.toolbarEl);
-        this.controlsBuilder.createEditModeToggle(this.toolbarEl);
-        this.controlsBuilder.createNarrativeOrderToggle(this.toolbarEl);
-        this.controlsBuilder.createEraToggle(this.toolbarEl);
-        this.controlsBuilder.createDensityPresetButton(this.toolbarEl);
-
-        // Manage eras button
-        const manageErasBtn = this.toolbarEl.createEl('button', {
-            cls: 'clickable-icon storyteller-toolbar-btn',
-            attr: {
-                'aria-label': 'Manage timeline eras',
-                'title': 'Manage timeline eras'
-            }
-        });
-        setIcon(manageErasBtn, 'calendar-range');
-        manageErasBtn.addEventListener('click', () => { void (async () => {
-            const { EraListModal } = await import('../modals/EraListModal');
-            new EraListModal(this.app, this.plugin).open();
-        })(); });
-
-        // Track selector dropdown
-        const trackSelectorContainer = this.toolbarEl.createDiv('storyteller-track-selector');
-        trackSelectorContainer.createEl('span', {
-            text: 'Track: ',
-            cls: 'storyteller-track-label'
-        });
-
-        const trackDropdown = new DropdownComponent(trackSelectorContainer);
-        trackDropdown.addOption('', 'All events (global)');
-
-        // Populate tracks from settings
+    private buildTrackField(container: HTMLElement): void {
         const tracks = this.plugin.settings.timelineTracks || [];
         const visibleTracks = TimelineTrackManager.getVisibleTracks(tracks);
-        for (const track of visibleTracks) {
-            trackDropdown.addOption(track.id, track.name);
-        }
+        // A track picker with no tracks to pick is noise; the overflow menu
+        // still offers the manager for anyone who wants to create one.
+        if (!visibleTracks.length) return;
 
-        trackDropdown.setValue(this.currentState.currentTrackId || '');
-        trackDropdown.onChange(async (trackId) => {
+        const field = this.labelledField(container, 'Track');
+        const dropdown = new DropdownComponent(field);
+        dropdown.addOption('', 'All events');
+        visibleTracks.forEach(track => { dropdown.addOption(track.id, track.name); });
+        dropdown.setValue(this.currentState.currentTrackId || '');
+        dropdown.onChange((trackId: string) => {
             this.currentState.currentTrackId = trackId || undefined;
-            await this.applyTrackFilter(trackId);
+            void this.applyTrackFilter(trackId);
         });
+    }
 
-        // Scenes toggle button
-        const scenesBtn = this.toolbarEl.createEl('button', {
-            cls: 'clickable-icon storyteller-toolbar-btn' + (this.showScenes ? ' is-active' : ''),
+    /**
+     * Conflicts stay in the toolbar rather than the overflow menu: it is the
+     * one control that reports a problem, so hiding it would defeat it.
+     */
+    private buildConflictBadge(container: HTMLElement): void {
+        const conflicts = this.plugin.settings.timelineConflicts || [];
+        const activeConflicts = conflicts.filter(c => !c.dismissed);
+        if (!activeConflicts.length) return;
+
+        const badge = container.createEl('button', {
+            cls: 'clickable-icon storyteller-toolbar-btn storyteller-conflict-badge',
             attr: {
-                'aria-label': 'Toggle scenes on timeline',
-                'title': 'Toggle scenes on timeline'
+                'aria-label': `${activeConflicts.length} timeline conflicts`,
+                'title': `View ${activeConflicts.length} timeline conflict(s)`
             }
         });
-        setIcon(scenesBtn, 'pencil');
-        scenesBtn.addEventListener('click', () => { void (async () => {
-            this.showScenes = !this.showScenes;
-            scenesBtn.toggleClass('is-active', this.showScenes);
-            this.renderer?.setShowScenes(this.showScenes);
+        const badgeIcon = badge.createSpan('storyteller-badge-icon');
+        setIcon(badgeIcon, 'alert-triangle');
+        badge.createSpan({ text: String(activeConflicts.length), cls: 'storyteller-badge-count' });
+        badge.addEventListener('click', () => { void (async () => {
+            const { ConflictListModal } = await import('../modals/ConflictListModal');
+            new ConflictListModal(this.app, this.plugin, conflicts, async () => { await this.refresh(); }).open();
         })(); });
+    }
 
-        // Vault notes toggle button
-        const notesBtn = this.toolbarEl.createEl('button', {
-            cls: 'clickable-icon storyteller-toolbar-btn' + (this.showWatchedNotes ? ' is-active' : ''),
-            attr: {
-                'aria-label': 'Toggle vault notes on timeline',
-                'title': 'Toggle vault notes on timeline'
-            }
-        });
-        setIcon(notesBtn, 'file');
-        notesBtn.addEventListener('click', () => { void (async () => {
-            this.showWatchedNotes = !this.showWatchedNotes;
-            notesBtn.toggleClass('is-active', this.showWatchedNotes);
-            this.renderer?.setShowWatchedNotes(this.showWatchedNotes);
-        })(); });
-
-        // Export button
-        const exportBtn = this.toolbarEl.createEl('button', {
-            cls: 'clickable-icon storyteller-toolbar-btn',
-            attr: {
-                'aria-label': t('export'),
-                'title': t('export')
-            }
-        });
-        setIcon(exportBtn, 'download');
-        exportBtn.addEventListener('click', () => this.showExportMenu(exportBtn));
-
-        // Refresh button using shared builder
-        this.controlsBuilder.createRefreshButton(this.toolbarEl);
-
-        // Quick jump-to-event search
-        const searchWrap = this.toolbarEl.createDiv('storyteller-timeline-search-wrap');
+    private buildSearchField(container: HTMLElement): void {
+        const searchWrap = container.createDiv('storyteller-timeline-search-wrap');
+        const searchIcon = searchWrap.createSpan('storyteller-timeline-search-icon');
+        setIcon(searchIcon, 'search');
         this.timelineSearchInputEl = searchWrap.createEl('input', {
             type: 'search',
             cls: 'storyteller-timeline-search-input',
-            placeholder: 'Jump to event...'
+            placeholder: 'Find an event'
         });
         this.timelineSearchDropdownEl = searchWrap.createDiv('storyteller-timeline-search-dropdown');
-        const searchBtn = searchWrap.createEl('button', {
-            cls: 'clickable-icon storyteller-toolbar-btn',
-            attr: { 'aria-label': 'Jump to event', 'title': 'Jump to event' }
-        });
-        setIcon(searchBtn, 'search');
-        searchBtn.addEventListener('click', () => this.runEventSearch());
-
-        const milestonesBtn = searchWrap.createEl('button', {
-            cls: 'clickable-icon storyteller-toolbar-btn' + (this.currentState.filters.milestonesOnly ? ' is-active' : ''),
-            attr: { 'aria-label': t('milestonesOnly'), 'title': t('milestonesOnly') }
-        });
-        setIcon(milestonesBtn, 'star');
-        milestonesBtn.addEventListener('click', () => {
-            const next = !this.currentState.filters.milestonesOnly;
-            this.currentState.filters.milestonesOnly = next;
-            milestonesBtn.toggleClass('is-active', next);
-            this.renderer?.applyFilters(this.currentState.filters);
-            this.buildFilterToggle();
-            this.updateFooterStatus();
-            this.updateSearchDropdown();
-        });
 
         this.timelineSearchInputEl.addEventListener('input', () => this.updateSearchDropdown());
         this.timelineSearchInputEl.addEventListener('focus', () => this.updateSearchDropdown());
@@ -402,6 +280,80 @@ export class TimelineView extends ItemView {
             if (e.key === 'Enter') this.runEventSearch();
             if (e.key === 'Escape') this.hideSearchDropdown();
         });
+    }
+
+    /**
+     * Everything that is reached occasionally rather than while reading the
+     * timeline: branches, era and track management, export, refresh.
+     */
+    private buildOverflowButton(container: HTMLElement): void {
+        const btn = container.createEl('button', {
+            cls: 'clickable-icon storyteller-toolbar-btn',
+            attr: { 'aria-label': 'More timeline options', 'aria-haspopup': 'menu', 'title': 'More options' }
+        });
+        setIcon(btn, 'more-horizontal');
+
+        btn.addEventListener('click', clickEvent => {
+            const menu = new Menu();
+
+            menu.addItem(item => item.setTitle('Milestones only')
+                .setChecked(Boolean(this.currentState.filters.milestonesOnly))
+                .onClick(() => {
+                    this.currentState.filters.milestonesOnly = !this.currentState.filters.milestonesOnly;
+                    this.renderer?.applyFilters(this.currentState.filters);
+                    this.buildFilterToggle();
+                    this.updateFooterStatus();
+                    this.updateSearchDropdown();
+                }));
+
+            menu.addSeparator();
+            const forks = this.plugin.getTimelineForks();
+            menu.addItem(item => item.setTitle('Main timeline')
+                .setChecked(!this.currentState.currentForkId)
+                .onClick(() => { void this.selectFork('main'); }));
+            if (forks.length) {
+                menu.addItem(item => item.setTitle('Compare branches')
+                    .setChecked(this.currentState.currentForkId === '__compare__')
+                    .onClick(() => { void this.selectFork('__compare__'); }));
+                forks.forEach(fork => {
+                    menu.addItem(item => item.setTitle(fork.name)
+                        .setChecked(this.currentState.currentForkId === fork.id)
+                        .onClick(() => { void this.selectFork(fork.id); }));
+                });
+            }
+
+            menu.addSeparator();
+            menu.addItem(item => item.setTitle('Manage eras').setIcon('calendar-range').onClick(() => { void (async () => {
+                const { EraListModal } = await import('../modals/EraListModal');
+                new EraListModal(this.app, this.plugin).open();
+            })(); }));
+            menu.addItem(item => item.setTitle('Manage tracks').setIcon('layers').onClick(() => { void (async () => {
+                const { TrackManagerModal } = await import('../modals/TrackManagerModal');
+                const tracks = this.plugin.settings.timelineTracks || [];
+                new TrackManagerModal(this.app, this.plugin, tracks, updated => { void (async () => {
+                    this.plugin.settings.timelineTracks = updated;
+                    await this.plugin.saveSettings();
+                    await this.refresh();
+                })(); }).open();
+            })(); }));
+
+            menu.addSeparator();
+            menu.addItem(item => item.setTitle('Export').setIcon('download').onClick(() => this.showExportMenu(btn)));
+            menu.addItem(item => item.setTitle('Refresh').setIcon('refresh-cw').onClick(() => { void this.refresh(); }));
+
+            menu.showAtMouseEvent(clickEvent);
+        });
+    }
+
+    /** Switch the visible branch, main or a fork or the comparison overlay. */
+    private async selectFork(selection: string): Promise<void> {
+        this.currentState.currentForkId = selection === 'main' ? undefined : selection;
+        this.currentState.filters = {
+            ...this.currentState.filters,
+            forkId: selection === 'main' ? undefined : selection
+        };
+        await this.buildTimeline();
+        this.updateFooterStatus();
     }
 
     /**
@@ -492,6 +444,7 @@ export class TimelineView extends ItemView {
             this.renderer.applyFilters(this.currentState.filters);
             this.scheduleTimelineRedraw();
             this.updateSearchDropdown();
+            this.renderEmptyState();
         } catch {
             
             this.timelineContainer.empty();
@@ -500,6 +453,60 @@ export class TimelineView extends ItemView {
             errorEl.createEl('p', { text: 'Failed to initialize timeline data. Check developer console for details.' });
             new Notice('Timeline failed to load. Check console for details.');
         }
+    }
+
+    /**
+     * An empty canvas says nothing. Someone opening the timeline for the first
+     * time, or filtering everything away by accident, gets told what the view
+     * is for and what to do next instead of an expanse of nothing.
+     */
+    private renderEmptyState(): void {
+        this.timelineContainer?.querySelector('.storyteller-timeline-empty')?.remove();
+        if (!this.timelineContainer || !this.renderer || this.renderer.getEventCount() > 0) return;
+
+        const filtered = this.hasActiveFilters();
+        const empty = this.timelineContainer.createDiv('storyteller-timeline-empty');
+        const icon = empty.createDiv('storyteller-timeline-empty-icon');
+        setIcon(icon, filtered ? 'filter-x' : 'clock');
+
+        empty.createEl('h3', {
+            text: filtered ? 'Nothing matches these filters' : 'Nothing on this timeline yet'
+        });
+        empty.createEl('p', {
+            cls: 'storyteller-timeline-empty-body',
+            text: filtered
+                ? 'Every event was filtered out. Clear the filters to see the whole story again.'
+                : 'Events that have a date appear here in order, so you can see how your story unfolds and drag things around to change when they happen.'
+        });
+
+        const actions = empty.createDiv('storyteller-timeline-empty-actions');
+        if (filtered) {
+            const clearBtn = actions.createEl('button', { cls: 'mod-cta', text: 'Clear filters' });
+            clearBtn.addEventListener('click', () => { void (async () => {
+                this.currentState.filters = {};
+                this.currentState.currentTrackId = undefined;
+                await this.refresh();
+            })(); });
+        } else {
+            const createBtn = actions.createEl('button', { cls: 'mod-cta', text: 'Create an event' });
+            createBtn.addEventListener('click', () => { void (async () => {
+                const { EventModal } = await import('../modals/EventModal');
+                new EventModal(this.app, this.plugin, null, async created => {
+                    await this.plugin.saveEvent(created);
+                    await this.refresh();
+                }).open();
+            })(); });
+        }
+    }
+
+    /** Whether anything is currently narrowing what the timeline shows. */
+    private hasActiveFilters(): boolean {
+        const filters = this.currentState.filters as Record<string, unknown>;
+        const narrowing = Object.entries(filters).some(([, value]) => {
+            if (Array.isArray(value)) return value.length > 0;
+            return value !== undefined && value !== null && value !== '' && value !== false;
+        });
+        return narrowing || Boolean(this.currentState.currentTrackId);
     }
 
     private scheduleTimelineRedraw(): void {

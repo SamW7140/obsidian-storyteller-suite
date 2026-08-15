@@ -11535,3 +11535,253 @@ body.mod-rtl .storyteller-group-members {
     padding-top: 0.4rem;
     padding-bottom: 0.4rem;
 }
+
+/* ── Timeline toolbar, grouped ─────────────────────────────────────────────
+   The old row was twenty-three controls in a flat line, most icon-only, so
+   nothing said which control belonged with which. These rules give the row
+   bands: what you are looking at, how it is framed, how it is drawn, then
+   search and the rest pushed to the trailing edge. */
+
+.storyteller-timeline-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.35rem 0.75rem;
+  padding: 0.4rem 0.5rem;
+}
+
+.storyteller-toolbar-group {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  position: relative;
+}
+
+/* A hairline between bands, rather than a gap the eye has to measure. */
+.storyteller-toolbar-group + .storyteller-toolbar-group::before {
+  content: '';
+  align-self: stretch;
+  width: 1px;
+  margin-inline-end: 0.45rem;
+  background: var(--background-modifier-border);
+}
+
+.storyteller-toolbar-trailing {
+  margin-inline-start: auto;
+}
+
+.storyteller-toolbar-trailing::before {
+  display: none;
+}
+
+/* Labelled fields — the toolbar reads as words, not glyphs. */
+.storyteller-toolbar-field {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+}
+
+.storyteller-toolbar-field-label {
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+  white-space: nowrap;
+}
+
+.storyteller-toolbar-field select,
+.storyteller-toolbar-field .dropdown {
+  max-width: 11rem;
+}
+
+/* Segmented view switch. Chronology, vertical and gantt are mutually
+   exclusive, so they read as one control with one selection. */
+.storyteller-segment {
+  display: inline-flex;
+  align-items: stretch;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: var(--radius-m);
+  overflow: hidden;
+  background: var(--background-primary);
+}
+
+.storyteller-segment-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.25rem 0.55rem;
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.storyteller-segment-btn + .storyteller-segment-btn {
+  border-inline-start: 1px solid var(--background-modifier-border);
+}
+
+.storyteller-segment-btn:hover {
+  background: var(--background-modifier-hover);
+  color: var(--text-normal);
+}
+
+/* The active segment takes the accent as a surface. */
+.storyteller-segment-btn.is-active {
+  background: var(--interactive-accent);
+  color: var(--text-on-accent);
+}
+
+.storyteller-segment-btn.is-active:hover {
+  background: var(--interactive-accent-hover);
+  color: var(--text-on-accent);
+}
+
+.storyteller-segment-icon {
+  display: inline-flex;
+  align-items: center;
+}
+
+.storyteller-segment-icon .svg-icon {
+  width: 0.9em;
+  height: 0.9em;
+}
+
+/* Buttons that carry a word and optionally a caret. */
+.storyteller-toolbar-btn-labelled {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.25rem 0.5rem;
+  background: transparent;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: var(--radius-m);
+  color: var(--text-normal);
+  font-size: var(--font-ui-smaller);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.storyteller-toolbar-btn-labelled:hover {
+  background: var(--background-modifier-hover);
+}
+
+.storyteller-toolbar-btn-icon,
+.storyteller-toolbar-caret {
+  display: inline-flex;
+  align-items: center;
+}
+
+.storyteller-toolbar-btn-icon .svg-icon,
+.storyteller-toolbar-caret .svg-icon {
+  width: 0.85em;
+  height: 0.85em;
+}
+
+.storyteller-toolbar-caret {
+  color: var(--text-muted);
+}
+
+/* Search grows into whatever room is left. */
+.storyteller-timeline-search-wrap {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  position: relative;
+  min-width: 9rem;
+  flex: 1 1 12rem;
+  max-width: 20rem;
+  padding: 0 0.4rem;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: var(--radius-m);
+  background: var(--background-primary);
+}
+
+.storyteller-timeline-search-icon {
+  display: inline-flex;
+  align-items: center;
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+
+.storyteller-timeline-search-icon .svg-icon {
+  width: 0.9em;
+  height: 0.9em;
+}
+
+.storyteller-timeline-search-wrap .storyteller-timeline-search-input {
+  flex: 1 1 auto;
+  min-width: 0;
+  border: none;
+  background: transparent;
+  box-shadow: none;
+  padding: 0.25rem 0;
+}
+
+.storyteller-timeline-search-wrap .storyteller-timeline-search-input:focus {
+  box-shadow: none;
+}
+
+/* Narrow panes: labels drop away before the controls do. */
+@container (max-width: 720px) {
+  .storyteller-toolbar-field-label,
+  .storyteller-segment-label {
+    display: none;
+  }
+}
+
+/* ── Timeline empty state ─────────────────────────────────────────────────
+   A blank canvas explains nothing. Say what the view is for. */
+
+.storyteller-timeline-empty {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  padding: 2rem;
+  text-align: center;
+  pointer-events: none;
+}
+
+.storyteller-timeline-empty > * {
+  pointer-events: auto;
+}
+
+.storyteller-timeline-empty-icon {
+  display: inline-flex;
+  color: var(--text-faint);
+}
+
+.storyteller-timeline-empty-icon .svg-icon {
+  width: 2.5rem;
+  height: 2.5rem;
+}
+
+.storyteller-timeline-empty h3 {
+  margin: 0;
+  color: var(--text-normal);
+}
+
+.storyteller-timeline-empty-body {
+  margin: 0;
+  max-width: 34rem;
+  color: var(--text-muted);
+  font-size: var(--font-ui-small);
+  line-height: 1.5;
+}
+
+.storyteller-timeline-empty-actions {
+  display: flex;
+  gap: 0.5rem;
+  margin-top: 0.35rem;
+}
+
+/* The toolbar responds to the pane, not the window: these views are often
+   docked in a narrow sidebar while the window itself is wide. */
+.storyteller-timeline-view {
+  container-type: inline-size;
+}

@@ -1,7 +1,7 @@
 // Timeline Controls Builder - Shared toolbar control creation for Timeline UI components
 // Provides factory methods for creating common timeline toolbar controls
 
-import { setIcon, Notice, Setting } from 'obsidian';
+import { setIcon, Menu, Notice, Setting } from 'obsidian';
 import { t } from '../i18n/strings';
 import StorytellerSuitePlugin from '../main';
 import { TimelineRenderer } from './NativeTimelineRenderer';
@@ -23,6 +23,33 @@ export interface TimelineControlCallbacks {
     getRenderer: () => TimelineRenderer | null;
     /** Get current events (for filter population) */
     getEvents: () => Event[] | Promise<Event[]>;
+}
+
+/** The three mutually exclusive timeline views. */
+export type TimelineViewMode = 'chronology' | 'vertical' | 'gantt';
+
+/**
+ * Display toggles the view owns rather than the shared UI state, passed in so
+ * the Display menu can present every display option in one place.
+ */
+export interface DisplayMenuExtras {
+    getShowScenes: () => boolean;
+    setShowScenes: (value: boolean) => void;
+    getShowWatchedNotes: () => boolean;
+    setShowWatchedNotes: (value: boolean) => void;
+}
+
+const DENSITY_PRESETS = [
+    { key: 'compact', value: 30, label: 'Compact rows' },
+    { key: 'balanced', value: 50, label: 'Balanced rows' },
+    { key: 'spacious', value: 70, label: 'Spacious rows' }
+] as const;
+
+function nearestDensity(density: number): typeof DENSITY_PRESETS[number] {
+    return DENSITY_PRESETS.reduce(
+        (best, preset) => Math.abs(preset.value - density) < Math.abs(best.value - density) ? preset : best,
+        DENSITY_PRESETS[1]
+    );
 }
 
 /**
@@ -351,6 +378,151 @@ export class TimelineControlsBuilder {
             await this.callbacks.getRenderer()?.refresh();
             this.callbacks.onStateChange();
         })(); });
+        return btn;
+    }
+
+    /**
+     * The three views, as one segmented control.
+     *
+     * Chronology, vertical and gantt are mutually exclusive: orientation is
+     * silently ignored while gantt is on, so the old pair of independent
+     * toggles let you pick a combination that did not exist. One control that
+     * names each view removes that, and says in words what the icons did not.
+     */
+    createViewModeSegment(container: HTMLElement): HTMLElement {
+        const group = container.createDiv('storyteller-segment');
+        group.setAttribute('role', 'radiogroup');
+        group.setAttribute('aria-label', 'Timeline view');
+
+        const modes: { id: TimelineViewMode; label: string; icon: string; hint: string }[] = [
+            { id: 'chronology', label: 'Chronology', icon: 'move-horizontal', hint: 'Events along a horizontal time axis' },
+            { id: 'vertical', label: 'Vertical', icon: 'move-vertical', hint: 'Events down a vertical time axis' },
+            { id: 'gantt', label: 'Gantt', icon: 'align-left', hint: 'Durations as bars, with dependencies' }
+        ];
+
+        const current = (): TimelineViewMode => this.state.ganttMode
+            ? 'gantt'
+            : this.state.timelineOrientation === 'vertical' ? 'vertical' : 'chronology';
+
+        const buttons = modes.map(mode => {
+            const btn = group.createEl('button', {
+                cls: 'storyteller-segment-btn',
+                attr: { role: 'radio', title: mode.hint, 'aria-label': mode.label }
+            });
+            const icon = btn.createSpan('storyteller-segment-icon');
+            setIcon(icon, mode.icon);
+            btn.createSpan({ cls: 'storyteller-segment-label', text: mode.label });
+            btn.addEventListener('click', () => this.setViewMode(mode.id, sync));
+            return { mode, btn };
+        });
+
+        const sync = () => {
+            const active = current();
+            buttons.forEach(({ mode, btn }) => {
+                const on = mode.id === active;
+                btn.toggleClass('is-active', on);
+                btn.setAttribute('aria-checked', String(on));
+            });
+        };
+        sync();
+        return group;
+    }
+
+    private setViewMode(mode: TimelineViewMode, sync: () => void): void {
+        const gantt = mode === 'gantt';
+        const orientation = mode === 'vertical' ? 'vertical' : 'horizontal';
+        const changed = gantt !== this.state.ganttMode || orientation !== this.state.timelineOrientation;
+        if (!changed) return;
+        this.state.ganttMode = gantt;
+        this.state.timelineOrientation = orientation;
+        sync();
+        const renderer = this.callbacks.getRenderer();
+        renderer?.setTimelineOrientation(orientation);
+        renderer?.setGanttMode(gantt);
+        this.callbacks.onStateChange();
+    }
+
+    /**
+     * Navigation menu: the five ways to reframe the view, behind one button
+     * rather than five icons that all look like zooming.
+     */
+    createFitMenu(container: HTMLElement): HTMLButtonElement {
+        const btn = container.createEl('button', {
+            cls: 'storyteller-toolbar-btn storyteller-toolbar-btn-labelled',
+            attr: { 'aria-label': 'Frame the view', 'aria-haspopup': 'menu' }
+        });
+        btn.createSpan({ cls: 'storyteller-toolbar-btn-text', text: t('fit') });
+        const caret = btn.createSpan('storyteller-toolbar-caret');
+        setIcon(caret, 'chevron-down');
+
+        btn.addEventListener('click', clickEvent => {
+            const renderer = this.callbacks.getRenderer();
+            const menu = new Menu();
+            menu.addItem(item => item.setTitle('Fit all events').setIcon('maximize-2').onClick(() => renderer?.fitToView()));
+            menu.addItem(item => item.setTitle('Fit visible groups').setIcon('rows-3').onClick(() => renderer?.fitToView()));
+            menu.addSeparator();
+            menu.addItem(item => item.setTitle('Show a decade').setIcon('calendar-range').onClick(() => renderer?.zoomPresetYears(10)));
+            menu.addItem(item => item.setTitle('Show a century').setIcon('calendar-range').onClick(() => renderer?.zoomPresetYears(100)));
+            menu.addItem(item => item.setTitle('Jump to today').setIcon('calendar-clock').onClick(() => renderer?.moveToToday()));
+            menu.showAtMouseEvent(clickEvent);
+        });
+        return btn;
+    }
+
+    /**
+     * Display options, named rather than iconified.
+     *
+     * These six were the least discoverable part of the old toolbar: toggles
+     * whose only clue was an icon and whose only feedback was a highlight.
+     * A menu states what each one does and shows its state as a checkmark.
+     */
+    createDisplayMenu(container: HTMLElement, extras: DisplayMenuExtras): HTMLButtonElement {
+        const btn = container.createEl('button', {
+            cls: 'storyteller-toolbar-btn storyteller-toolbar-btn-labelled',
+            attr: { 'aria-label': 'Display options', 'aria-haspopup': 'menu' }
+        });
+        const icon = btn.createSpan('storyteller-toolbar-btn-icon');
+        setIcon(icon, 'sliders-horizontal');
+        btn.createSpan({ cls: 'storyteller-toolbar-btn-text', text: 'Display' });
+        const caret = btn.createSpan('storyteller-toolbar-caret');
+        setIcon(caret, 'chevron-down');
+
+        btn.addEventListener('click', clickEvent => {
+            const renderer = this.callbacks.getRenderer();
+            const menu = new Menu();
+            const check = (title: string, on: boolean, apply: () => void) => {
+                menu.addItem(item => item.setTitle(title).setChecked(on).onClick(() => { apply(); this.callbacks.onStateChange(); }));
+            };
+
+            check('Era backgrounds', this.state.showEras, () => {
+                this.state.showEras = !this.state.showEras;
+                renderer?.setShowEras(this.state.showEras);
+            });
+            check('Scenes', extras.getShowScenes(), () => extras.setShowScenes(!extras.getShowScenes()));
+            check('Vault notes', extras.getShowWatchedNotes(), () => extras.setShowWatchedNotes(!extras.getShowWatchedNotes()));
+            check('Stack overlapping events', this.state.stackEnabled, () => {
+                this.state.stackEnabled = !this.state.stackEnabled;
+                this.callbacks.onRendererUpdate();
+            });
+            menu.addSeparator();
+            check('Narrative order', this.state.narrativeOrder, () => {
+                this.state.narrativeOrder = !this.state.narrativeOrder;
+                renderer?.setNarrativeOrder(this.state.narrativeOrder);
+            });
+
+            menu.addSeparator();
+            DENSITY_PRESETS.forEach(preset => {
+                menu.addItem(item => item
+                    .setTitle(preset.label)
+                    .setChecked(nearestDensity(this.state.density).key === preset.key)
+                    .onClick(() => {
+                        this.state.density = preset.value;
+                        renderer?.setDensity(preset.value);
+                        this.callbacks.onStateChange();
+                    }));
+            });
+            menu.showAtMouseEvent(clickEvent);
+        });
         return btn;
     }
 
