@@ -17,15 +17,16 @@ export class EraManager {
      * Get all eras from settings
      */
     async getEras(): Promise<TimelineEra[]> {
-        return this.plugin.settings.timelineEras || [];
+        return this.plugin.getTimelineEras();
     }
 
     /**
      * Save eras to settings
      */
     async saveEras(eras: TimelineEra[]): Promise<void> {
-        this.plugin.settings.timelineEras = eras;
-        await this.plugin.saveSettings();
+        // Scoped setter: this list holds the active story's eras only, so a
+        // plain assignment here would delete every other story's.
+        await this.plugin.setTimelineEras(eras);
     }
 
     /**

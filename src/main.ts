@@ -31,6 +31,7 @@ import {
 } from './yaml/EntitySections';
 import { stringifyYamlWithLogging, validateFrontmatterPreservation } from './utils/YamlSerializer';
 import { stripWikiLink } from './utils/WikiLinks';
+import { StoryScoped, scopeToStory, stampStory, mergeStoryScoped, backfillStoryIds } from './utils/StoryScope';
 import { setLocale, t } from './i18n/strings';
 import { FolderResolver, FolderResolverOptions, EntityFolderType, StoryFolderOverrides } from './folders/FolderResolver';
 import { PromptModal } from './modals/ui/PromptModal';
@@ -2615,14 +2616,13 @@ export default class StorytellerSuitePlugin extends Plugin {
 			id: 'manage-timeline-tracks',
 			name: 'Manage timeline tracks',
 			callback: () => {
-				const tracks = this.settings.timelineTracks || [];
+				const tracks = this.getTimelineTracks();
 				new TrackManagerModal(
 					this.app,
 					this,
 					tracks,
 					(updatedTracks) => { void (async () => {
-						this.settings.timelineTracks = updatedTracks;
-						await this.saveSettings();
+						await this.setTimelineTracks(updatedTracks);
 					})(); }
 				).open();
 			}
@@ -3152,8 +3152,7 @@ export default class StorytellerSuitePlugin extends Plugin {
 				const detectedConflicts = ConflictDetector.detectAllConflicts(events);
 				const conflicts = ConflictDetector.toStorageFormat(detectedConflicts);
 
-				this.settings.timelineConflicts = conflicts;
-				await this.saveSettings();
+				await this.setTimelineConflicts(conflicts);
 
 				new Notice(`Found ${conflicts.length} timeline conflict(s)`);
 
@@ -3170,8 +3169,7 @@ export default class StorytellerSuitePlugin extends Plugin {
 						const detectedConflicts = ConflictDetector.detectAllConflicts(events);
 						const newConflicts = ConflictDetector.toStorageFormat(detectedConflicts);
 
-						this.settings.timelineConflicts = newConflicts;
-						await this.saveSettings();
+						await this.setTimelineConflicts(newConflicts);
 						new Notice(`Found ${newConflicts.length} timeline conflict(s)`);
 					}
 				).open();
@@ -3183,7 +3181,7 @@ export default class StorytellerSuitePlugin extends Plugin {
 			id: 'view-timeline-conflicts',
 			name: 'View timeline conflicts',
 			callback: async () => {
-				const conflicts = this.settings.timelineConflicts || [];
+				const conflicts = this.getTimelineConflicts();
 
 				if (conflicts.length === 0) {
 					new Notice('No conflicts detected. Run "detect timeline conflicts" to scan.');
@@ -3202,8 +3200,7 @@ export default class StorytellerSuitePlugin extends Plugin {
 						const detectedConflicts = ConflictDetector.detectAllConflicts(events);
 						const newConflicts = ConflictDetector.toStorageFormat(detectedConflicts);
 
-						this.settings.timelineConflicts = newConflicts;
-						await this.saveSettings();
+						await this.setTimelineConflicts(newConflicts);
 						new Notice(`Found ${newConflicts.length} timeline conflict(s)`);
 					}
 				).open();
@@ -7367,6 +7364,82 @@ export default class StorytellerSuitePlugin extends Plugin {
     // ============================================================
 
     /**
+     * Eras, tracks, forks, conflicts and causality links each describe one
+     * story, but they live in a single flat array in data.json shared by every
+     * story in the vault. Entities are story-scoped through the folder
+     * resolver, so without this the two halves of the timeline disagree about
+     * which story you are looking at: switch stories and the previous story's
+     * eras stay painted across the view.
+     *
+     * Reads filter to the active story. Writes merge back over the other
+     * stories' entries, which is the part that matters: a caller hands back
+     * the list it was given, which holds only its own story's entries, and a
+     * plain assignment would delete every other story's.
+     *
+     * With no active story there is nothing to scope by, so reads return
+     * everything and writes replace everything, exactly as before scoping.
+     */
+    private scopeTimelineList<T extends StoryScoped>(list: T[] | undefined): T[] {
+        return scopeToStory(list, this.settings.activeStoryId);
+    }
+
+    /** Stamp an entry with the active story on the way in. */
+    private stampTimelineEntry<T extends StoryScoped>(entry: T): T {
+        return stampStory(entry, this.settings.activeStoryId);
+    }
+
+    /** Replace the active story's slice of a shared array, keeping the rest. */
+    private mergeTimelineList<T extends StoryScoped>(list: T[] | undefined, next: T[]): T[] {
+        return mergeStoryScoped(list, next, this.settings.activeStoryId);
+    }
+
+    /**
+     * Adopt pre-scoping entries into the active story, once.
+     *
+     * @returns whether anything changed
+     */
+    private backfillTimelineStoryIds(): boolean {
+        return backfillStoryIds([
+            this.settings.timelineForks,
+            this.settings.timelineEras,
+            this.settings.timelineTracks,
+            this.settings.timelineConflicts,
+            this.settings.causalityLinks
+        ], this.settings.activeStoryId);
+    }
+
+    /**
+     * Replace the active story's eras. Other stories' eras are preserved.
+     */
+    async setTimelineEras(eras: TimelineEra[]): Promise<void> {
+        this.settings.timelineEras = this.mergeTimelineList(this.settings.timelineEras, eras);
+        await this.saveSettings();
+    }
+
+    /**
+     * Replace the active story's tracks. Other stories' tracks are preserved.
+     */
+    async setTimelineTracks(tracks: TimelineTrack[]): Promise<void> {
+        this.settings.timelineTracks = this.mergeTimelineList(this.settings.timelineTracks, tracks);
+        await this.saveSettings();
+    }
+
+    /** Conflicts detected against the active story. */
+    getTimelineConflicts(): TimelineConflict[] {
+        return this.scopeTimelineList(this.settings.timelineConflicts);
+    }
+
+    /**
+     * Replace the active story's conflicts. Detection runs over the active
+     * story's events only, so the result describes this story alone and must
+     * not be allowed to clear another story's recorded conflicts.
+     */
+    async setTimelineConflicts(conflicts: TimelineConflict[]): Promise<void> {
+        this.settings.timelineConflicts = this.mergeTimelineList(this.settings.timelineConflicts, conflicts);
+        await this.saveSettings();
+    }
+
+    /**
      * Create a new timeline fork (alternate timeline)
      * @param name - Name of the fork
      * @param divergenceEvent - Event where timeline diverges
@@ -7397,7 +7470,7 @@ export default class StorytellerSuitePlugin extends Plugin {
         };
 
         this.settings.timelineForks = this.settings.timelineForks || [];
-        this.settings.timelineForks.push(fork);
+        this.settings.timelineForks.push(this.stampTimelineEntry(fork));
         void this.saveSettings();
 
         new Notice(`Timeline fork "${name}" created`);
@@ -7409,7 +7482,7 @@ export default class StorytellerSuitePlugin extends Plugin {
      * @returns Array of all timeline forks
      */
     getTimelineForks(): TimelineFork[] {
-        return this.settings.timelineForks || [];
+        return this.scopeTimelineList(this.settings.timelineForks);
     }
 
     /**
@@ -7418,7 +7491,7 @@ export default class StorytellerSuitePlugin extends Plugin {
      * @returns The timeline fork or undefined if not found
      */
     getTimelineFork(forkId: string): TimelineFork | undefined {
-        return this.settings.timelineForks?.find(f => f.id === forkId);
+        return this.getTimelineForks().find(f => f.id === forkId);
     }
 
     /**
@@ -7428,7 +7501,7 @@ export default class StorytellerSuitePlugin extends Plugin {
     async updateTimelineFork(fork: TimelineFork): Promise<void> {
         const index = this.settings.timelineForks?.findIndex(f => f.id === fork.id);
         if (index !== undefined && index >= 0) {
-            this.settings.timelineForks![index] = fork;
+            this.settings.timelineForks![index] = this.stampTimelineEntry(fork);
             await this.saveSettings();
             new Notice(`Timeline fork "${fork.name}" updated`);
         } else {
@@ -7531,7 +7604,7 @@ export default class StorytellerSuitePlugin extends Plugin {
      */
     async createTimelineEra(era: TimelineEra): Promise<void> {
         this.settings.timelineEras = this.settings.timelineEras || [];
-        this.settings.timelineEras.push(era);
+        this.settings.timelineEras.push(this.stampTimelineEntry(era));
         await this.saveSettings();
         new Notice(`Era "${era.name}" created`);
     }
@@ -7541,7 +7614,7 @@ export default class StorytellerSuitePlugin extends Plugin {
      * @returns Array of all eras
      */
     getTimelineEras(): TimelineEra[] {
-        return this.settings.timelineEras || [];
+        return this.scopeTimelineList(this.settings.timelineEras);
     }
 
     /**
@@ -7550,7 +7623,7 @@ export default class StorytellerSuitePlugin extends Plugin {
      * @returns The era or undefined if not found
      */
     getTimelineEra(eraId: string): TimelineEra | undefined {
-        return this.settings.timelineEras?.find(e => e.id === eraId);
+        return this.getTimelineEras().find(e => e.id === eraId);
     }
 
     /**
@@ -7560,7 +7633,7 @@ export default class StorytellerSuitePlugin extends Plugin {
     async updateTimelineEra(era: TimelineEra): Promise<void> {
         const index = this.settings.timelineEras?.findIndex(e => e.id === era.id);
         if (index !== undefined && index >= 0) {
-            this.settings.timelineEras![index] = era;
+            this.settings.timelineEras![index] = this.stampTimelineEntry(era);
             await this.saveSettings();
             new Notice(`Era "${era.name}" updated`);
         } else {
@@ -7593,7 +7666,7 @@ export default class StorytellerSuitePlugin extends Plugin {
      */
     async createTimelineTrack(track: TimelineTrack): Promise<void> {
         this.settings.timelineTracks = this.settings.timelineTracks || [];
-        this.settings.timelineTracks.push(track);
+        this.settings.timelineTracks.push(this.stampTimelineEntry(track));
         await this.saveSettings();
         new Notice(`Track "${track.name}" created`);
     }
@@ -7603,7 +7676,7 @@ export default class StorytellerSuitePlugin extends Plugin {
      * @returns Array of all tracks
      */
     getTimelineTracks(): TimelineTrack[] {
-        return this.settings.timelineTracks || [];
+        return this.scopeTimelineList(this.settings.timelineTracks);
     }
 
     /**
@@ -7612,7 +7685,7 @@ export default class StorytellerSuitePlugin extends Plugin {
      * @returns The track or undefined if not found
      */
     getTimelineTrack(trackId: string): TimelineTrack | undefined {
-        return this.settings.timelineTracks?.find(t => t.id === trackId);
+        return this.getTimelineTracks().find(t => t.id === trackId);
     }
 
     /**
@@ -7622,7 +7695,7 @@ export default class StorytellerSuitePlugin extends Plugin {
     async updateTimelineTrack(track: TimelineTrack): Promise<void> {
         const index = this.settings.timelineTracks?.findIndex(t => t.id === track.id);
         if (index !== undefined && index >= 0) {
-            this.settings.timelineTracks![index] = track;
+            this.settings.timelineTracks![index] = this.stampTimelineEntry(track);
             await this.saveSettings();
             new Notice(`Track "${track.name}" updated`);
         } else {
@@ -7675,7 +7748,7 @@ export default class StorytellerSuitePlugin extends Plugin {
         };
 
         this.settings.causalityLinks = this.settings.causalityLinks || [];
-        this.settings.causalityLinks.push(link);
+        this.settings.causalityLinks.push(this.stampTimelineEntry(link));
         void this.saveSettings();
 
         new Notice(`Causality link created: ${causeEvent} → ${effectEvent}`);
@@ -7687,7 +7760,7 @@ export default class StorytellerSuitePlugin extends Plugin {
      * @returns Array of all causality links
      */
     getCausalityLinks(): CausalityLink[] {
-        return this.settings.causalityLinks || [];
+        return this.scopeTimelineList(this.settings.causalityLinks);
     }
 
     /**
@@ -7696,7 +7769,7 @@ export default class StorytellerSuitePlugin extends Plugin {
      * @returns Object containing causes and effects for the event
      */
     getCausalityLinksForEvent(eventId: string): { causes: CausalityLink[], effects: CausalityLink[] } {
-        const links = this.settings.causalityLinks || [];
+        const links = this.scopeTimelineList(this.settings.causalityLinks);
 
         return {
             causes: links.filter(l => l.effectEvent === eventId),
@@ -7711,7 +7784,7 @@ export default class StorytellerSuitePlugin extends Plugin {
     async updateCausalityLink(link: CausalityLink): Promise<void> {
         const index = this.settings.causalityLinks?.findIndex(l => l.id === link.id);
         if (index !== undefined && index >= 0) {
-            this.settings.causalityLinks![index] = link;
+            this.settings.causalityLinks![index] = this.stampTimelineEntry(link);
             await this.saveSettings();
             new Notice(`Causality link updated`);
         } else {
@@ -9282,6 +9355,10 @@ export default class StorytellerSuitePlugin extends Plugin {
                 if (!g.tags) g.tags = [];
                 // profileImagePath may be undefined; leave as-is if missing
             }
+        }
+
+        if (this.backfillTimelineStoryIds()) {
+            settingsUpdated = true;
         }
 
 		if(settingsUpdated){

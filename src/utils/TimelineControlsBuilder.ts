@@ -787,14 +787,13 @@ export class TimelineControlsBuilder {
         setIcon(btn, 'layers-2');
 
         btn.addEventListener('click', () => {
-            const tracks = this.plugin.settings.timelineTracks || [];
+            const tracks = this.plugin.getTimelineTracks();
             new TrackManagerModal(
                 this.plugin.app,
                 this.plugin,
                 tracks,
                 (updatedTracks) => { void (async () => {
-                    this.plugin.settings.timelineTracks = updatedTracks;
-                    await this.plugin.saveSettings();
+                    await this.plugin.setTimelineTracks(updatedTracks);
                     this.callbacks.onRendererUpdate();
                 })(); }
             ).open();

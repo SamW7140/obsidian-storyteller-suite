@@ -638,7 +638,7 @@ export class NativeTimelineRenderer {
     }
 
     private matchTrack(event: Event): TimelineTrack | undefined {
-        const tracks = (this.plugin.settings.timelineTracks || []).filter(track => track.visible !== false);
+        const tracks = this.plugin.getTimelineTracks().filter(track => track.visible !== false);
         const specific = tracks.find(track => {
             if (track.type === 'global') return false;
             if (track.type === 'character') return !!track.entityId && !!event.characters?.includes(track.entityId);
@@ -1102,7 +1102,7 @@ export class NativeTimelineRenderer {
     private drawVerticalEras(ctx: CanvasRenderingContext2D, absoluteStart: number, absoluteEnd: number, top: number, bottom: number, width: number): void {
         if (!this.options.showEras) return;
         const span = absoluteEnd - absoluteStart;
-        (this.plugin.settings.timelineEras || []).filter(era => era.visible !== false).forEach(era => {
+        this.plugin.getTimelineEras().filter(era => era.visible !== false).forEach(era => {
             const start = this.parseDate(era.startDate) / DAY_MS + this.unixEpochAbsoluteDay();
             const end = this.parseDate(era.endDate) / DAY_MS + this.unixEpochAbsoluteDay();
             if (!Number.isFinite(start) || !Number.isFinite(end) || end < absoluteStart || start > absoluteEnd) return;
@@ -1449,7 +1449,7 @@ export class NativeTimelineRenderer {
 
     private drawEras(ctx: CanvasRenderingContext2D, width: number, height: number): void {
         if (!this.options.showEras) return;
-        const eras = (this.plugin.settings.timelineEras || []).filter(era => era.visible !== false);
+        const eras = this.plugin.getTimelineEras().filter(era => era.visible !== false);
         eras.forEach(era => {
             const start = this.parseDate(era.startDate); const end = this.parseDate(era.endDate);
             if (!Number.isFinite(start) || !Number.isFinite(end)) return;

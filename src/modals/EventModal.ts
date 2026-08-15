@@ -628,7 +628,7 @@ export class EventModal extends ResponsiveModal {
 
         // --- Era Membership ---
         contentEl.createEl('h3', { text: 'Timeline eras' });
-        const eras = this.plugin.settings.timelineEras || [];
+        const eras = this.plugin.getTimelineEras();
         if (eras.length > 0) {
             contentEl.createEl('p', {
                 text: 'This event belongs to the following timeline eras based on its date:',

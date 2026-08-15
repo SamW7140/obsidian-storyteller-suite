@@ -1783,6 +1783,9 @@ export interface TimelineFork {
     /** Unique identifier */
     id: string;
 
+    /** Story this fork belongs to. Absent on entries written before scoping. */
+    storyId?: string;
+
     /** Display name of the fork */
     name: string;
 
@@ -1827,6 +1830,9 @@ export interface CausalityLink {
     /** Unique identifier */
     id: string;
 
+    /** Story this link belongs to. Absent on entries written before scoping. */
+    storyId?: string;
+
     /** ID or name of the cause event */
     causeEvent: string;
 
@@ -1870,6 +1876,9 @@ export interface TimelineConflict {
     /** Unique identifier */
     id: string;
 
+    /** Story this conflict belongs to. Absent on entries written before scoping. */
+    storyId?: string;
+
     /** Type of conflict */
     type: 'location' | 'death' | 'age' | 'causality' | 'custom';
 
@@ -1902,6 +1911,9 @@ export interface TimelineConflict {
 export interface TimelineEra {
     /** Unique identifier */
     id: string;
+
+    /** Story this era belongs to. Absent on entries written before scoping. */
+    storyId?: string;
 
     /** Display name of the era (e.g., "Act I: The Beginning", "Medieval Period") */
     name: string;
@@ -1944,6 +1956,9 @@ export interface TimelineEra {
 export interface TimelineTrack {
     /** Unique identifier */
     id: string;
+
+    /** Story this track belongs to. Absent on entries written before scoping. */
+    storyId?: string;
 
     /** Display name of the track */
     name: string;

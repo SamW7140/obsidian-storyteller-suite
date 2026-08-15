@@ -230,7 +230,7 @@ export class TimelineView extends ItemView {
      * moment you go looking at the list.
      */
     private buildTrackField(container: HTMLElement): void {
-        const tracks = this.plugin.settings.timelineTracks || [];
+        const tracks = this.plugin.getTimelineTracks();
         const visibleTracks = TimelineTrackManager.getVisibleTracks(tracks);
 
         const field = this.labelledField(container, 'Track');
@@ -273,10 +273,9 @@ export class TimelineView extends ItemView {
     private openTrackManager(): void {
         void (async () => {
             const { TrackManagerModal } = await import('../modals/TrackManagerModal');
-            const tracks = this.plugin.settings.timelineTracks || [];
+            const tracks = this.plugin.getTimelineTracks();
             new TrackManagerModal(this.app, this.plugin, tracks, updated => { void (async () => {
-                this.plugin.settings.timelineTracks = updated;
-                await this.plugin.saveSettings();
+                await this.plugin.setTimelineTracks(updated);
                 await this.refresh();
             })(); }).open();
         })();
@@ -294,7 +293,7 @@ export class TimelineView extends ItemView {
      * one control that reports a problem, so hiding it would defeat it.
      */
     private buildConflictBadge(container: HTMLElement): void {
-        const conflicts = this.plugin.settings.timelineConflicts || [];
+        const conflicts = this.plugin.getTimelineConflicts();
         const activeConflicts = conflicts.filter(c => !c.dismissed);
         if (!activeConflicts.length) return;
 
@@ -536,7 +535,7 @@ export class TimelineView extends ItemView {
      */
     private async handleConflicts(conflicts: DetectedConflict[]): Promise<void> {
         const newConflicts = ConflictDetector.toStorageFormat(conflicts);
-        const currentConflicts = this.plugin.settings.timelineConflicts || [];
+        const currentConflicts = this.plugin.getTimelineConflicts();
         
         // Merge to preserve dismissed status
         const mergedConflicts = newConflicts.map(newC => {
@@ -549,8 +548,7 @@ export class TimelineView extends ItemView {
 
         // Only update if changed
         if (JSON.stringify(mergedConflicts) !== JSON.stringify(currentConflicts)) {
-            this.plugin.settings.timelineConflicts = mergedConflicts;
-            await this.plugin.saveSettings();
+            await this.plugin.setTimelineConflicts(mergedConflicts);
             this.buildToolbar();
         }
     }

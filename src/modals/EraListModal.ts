@@ -13,7 +13,7 @@ export class EraListModal extends ResponsiveModal {
     constructor(app: App, plugin: StorytellerSuitePlugin) {
         super(app);
         this.plugin = plugin;
-        this.eras = plugin.settings.timelineEras || [];
+        this.eras = plugin.getTimelineEras();
         this.modalEl.addClass('storyteller-era-list-modal');
     }
 
@@ -175,7 +175,7 @@ export class EraListModal extends ResponsiveModal {
                     const confirm = await this.confirmDelete(era.name);
                     if (confirm) {
                         await this.plugin.deleteTimelineEra(era.id);
-                        this.eras = this.plugin.settings.timelineEras || [];
+                        this.eras = this.plugin.getTimelineEras();
                         this.renderEraList();
                     }
                 })(); });
@@ -197,12 +197,12 @@ export class EraListModal extends ResponsiveModal {
                     await this.plugin.createTimelineEra(updatedEra);
                 }
                 // Refresh the list
-                this.eras = this.plugin.settings.timelineEras || [];
+                this.eras = this.plugin.getTimelineEras();
                 this.renderEraList();
             },
             async (eraToDelete) => {
                 await this.plugin.deleteTimelineEra(eraToDelete.id);
-                this.eras = this.plugin.settings.timelineEras || [];
+                this.eras = this.plugin.getTimelineEras();
                 this.renderEraList();
             }
         );
