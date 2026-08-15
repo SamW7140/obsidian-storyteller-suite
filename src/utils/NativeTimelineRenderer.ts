@@ -1669,7 +1669,8 @@ export class NativeTimelineRenderer {
             return;
         }
         const marker = this.slotsVisible() ? this.markerAt(event.offsetX, event.offsetY) : null;
-        if (this.canvas) this.canvas.style.cursor = marker ? 'ew-resize' : '';
+        const vertical = !this.options.ganttMode && this.options.timelineOrientation === 'vertical';
+        if (this.canvas) this.canvas.style.cursor = marker ? (vertical ? 'ns-resize' : 'ew-resize') : '';
         const item = marker ?? this.hit(event.offsetX, event.offsetY);
         if (item) this.showTooltip(item, event.offsetX, event.offsetY);
         else this.hideTooltip();
@@ -1686,7 +1687,15 @@ export class NativeTimelineRenderer {
         const vertical = !this.options.ganttMode && this.options.timelineOrientation === 'vertical';
         const plotSize = vertical ? Math.max(1, this.root.clientHeight - 52) : Math.max(1, this.root.clientWidth - SIDEBAR_WIDTH);
         const pointerDelta = vertical ? event.clientY - this.dragging.y : event.clientX - this.dragging.x;
-        const deltaTime = -pointerDelta / plotSize * (this.dragging.end - this.dragging.start);
+        // Two different conversions, because dragging.start/end mean two
+        // different things. For a pan they are the view window, and the content
+        // moves with the cursor, so the span is theirs and the sign is negated.
+        // For an item they are that event's own start and end — using their
+        // difference as the scale pinned every point event to zero movement and
+        // scaled ranges by their own duration.
+        const deltaTime = this.dragging.kind === 'pan'
+            ? -pointerDelta / plotSize * (this.dragging.end - this.dragging.start)
+            : pointerDelta / plotSize * (this.viewEnd - this.viewStart);
         if (this.dragging.kind === 'pan') {
             this.viewStart = this.dragging.start + deltaTime; this.viewEnd = this.dragging.end + deltaTime;
             if (!vertical) {
