@@ -668,6 +668,11 @@ export class NativeTimelineRenderer {
         ctx.clearRect(0, 0, width, height);
         ctx.fillStyle = this.css('--background-primary', '#111827');
         ctx.fillRect(0, 0, width, height);
+        // Reset before the orientation split: both layouts fill these, and the
+        // vertical branch returns early.
+        this.visibleItems = [];
+        this.markerHits = [];
+        this.slotTimes = this.computeSlotTimes();
         if (!this.options.ganttMode && this.options.timelineOrientation === 'vertical') {
             this.drawVerticalTimeline(ctx, width, height);
             return;
@@ -675,9 +680,6 @@ export class NativeTimelineRenderer {
         this.drawAxis(ctx, width, height);
         this.drawHorizontalCalendarLayers(ctx, width);
         this.drawEras(ctx, width, height);
-        this.visibleItems = [];
-        this.markerHits = [];
-        this.slotTimes = this.computeSlotTimes();
         this.lanes.forEach(lane => this.drawLane(ctx, lane, width, height));
         this.drawForkBranches(ctx, width, height);
         this.drawConnectors(ctx, width, height);
@@ -977,6 +979,9 @@ export class NativeTimelineRenderer {
             if (!alternateSides) ctx.fillText(tick.label, axisX - ctx.measureText(tick.label).width - 10, y + 4);
         });
 
+        const timeToY = (time: number) => top + (time - this.viewStart) / (this.viewEnd - this.viewStart) * (bottom - top);
+        this.drawVerticalSlots(ctx, axisX, top, bottom, timeToY);
+
         // Intersection, not containment: an event that began before the window
         // but runs into it is still on screen and must not be dropped.
         const items = this.lanes.flatMap(lane => lane.items).filter(item => item.end >= this.viewStart && item.start <= this.viewEnd).sort((a, b) => a.start - b.start);
@@ -1009,9 +1014,13 @@ export class NativeTimelineRenderer {
             ctx.strokeStyle = item.laneColor;
             ctx.lineWidth = 1.5;
             ctx.beginPath(); ctx.moveTo(axisX, desiredY); ctx.lineTo(rightSide ? chipX : chipX + chipWidth, placedY); ctx.stroke();
+            // The marker sits at desiredY, the event's true instant, not at
+            // placedY where collision avoidance pushed its card.
+            if (this.slotsVisible() && this.isDraggable(item)) this.markerHits.push({ item, x: axisX, y: desiredY });
             this.drawPointMarker(ctx, axisX, desiredY, item);
             this.drawVerticalEventCard(ctx, item, calendar);
         });
+        this.drawVerticalDropTarget(ctx, axisX, width, timeToY);
         this.drawConnectors(ctx, width, height);
         this.drawNowVertical(ctx, axisX, top, bottom);
     }
@@ -1286,9 +1295,7 @@ export class NativeTimelineRenderer {
     }
 
     private slotsVisible(): boolean {
-        return Boolean(this.options.editMode)
-            && !this.options.ganttMode
-            && this.options.timelineOrientation !== 'vertical';
+        return Boolean(this.options.editMode) && !this.options.ganttMode;
     }
 
     private computeSlotTimes(): number[] {
@@ -1360,6 +1367,50 @@ export class NativeTimelineRenderer {
         ctx.restore();
     }
 
+    /** Empty date slots down the vertical axis. */
+    private drawVerticalSlots(ctx: CanvasRenderingContext2D, axisX: number, top: number, bottom: number, timeToY: (time: number) => number): void {
+        if (!this.slotTimes.length) return;
+        ctx.save();
+        ctx.strokeStyle = this.css('--sts-timeline-slot', SLOT_COLOR);
+        ctx.lineWidth = 1;
+        ctx.globalAlpha = 0.55;
+        this.slotTimes.forEach(time => {
+            const y = timeToY(time);
+            if (y < top || y > bottom) return;
+            ctx.beginPath();
+            ctx.arc(axisX, y, SLOT_RADIUS, 0, Math.PI * 2);
+            ctx.stroke();
+        });
+        ctx.restore();
+    }
+
+    private drawVerticalDropTarget(ctx: CanvasRenderingContext2D, axisX: number, width: number, timeToY: (time: number) => number): void {
+        const dragging = this.dragging;
+        if (!dragging || dragging.kind !== 'marker' || this.dragGhost === null) return;
+        const y = timeToY(this.dragGhost);
+        const accent = this.css('--interactive-accent', '#7c3aed');
+
+        ctx.save();
+        ctx.strokeStyle = accent;
+        ctx.globalAlpha = 0.35;
+        ctx.setLineDash([3, 4]);
+        ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(width, y); ctx.stroke();
+        ctx.setLineDash([]);
+
+        ctx.globalAlpha = 1;
+        ctx.fillStyle = accent;
+        ctx.beginPath(); ctx.arc(axisX, y, SLOT_RADIUS + 2.5, 0, Math.PI * 2); ctx.fill();
+
+        const label = this.formatEditDate(this.dragGhost);
+        ctx.font = `600 11px ${this.css('--font-interface', 'sans-serif')}`;
+        const textWidth = ctx.measureText(label).width;
+        ctx.fillStyle = this.css('--background-secondary', '#1f2937');
+        ctx.fillRect(axisX + 10, y - 8, textWidth + 8, 16);
+        ctx.fillStyle = this.css('--text-normal', '#e5e7eb');
+        ctx.fillText(label, axisX + 14, y + 4);
+        ctx.restore();
+    }
+
     private drawPointMarker(ctx: CanvasRenderingContext2D, x: number, y: number, item: NativeItem): void {
         ctx.save();
         ctx.fillStyle = this.markerColor(item);
@@ -1376,6 +1427,16 @@ export class NativeTimelineRenderer {
             }
         } else {
             ctx.beginPath(); ctx.arc(x, y, 5, 0, Math.PI * 2); ctx.fill();
+        }
+        // A grab ring on anything that can be dragged. Slots alone were not
+        // enough of a signal: they are hidden whenever the zoom puts them
+        // closer than the pitch, so at a wide view turning edit mode on changed
+        // nothing on screen and read as the toggle being broken.
+        if (this.slotsVisible() && this.isDraggable(item)) {
+            ctx.strokeStyle = this.css('--interactive-accent', '#7c3aed');
+            ctx.lineWidth = 1.5;
+            ctx.globalAlpha = 0.9;
+            ctx.beginPath(); ctx.arc(x, y, item.event.isMilestone ? 10.5 : 8.5, 0, Math.PI * 2); ctx.stroke();
         }
         ctx.restore();
     }
