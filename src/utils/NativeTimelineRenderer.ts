@@ -10,7 +10,7 @@ import { GREGORIAN_CALENDAR } from '../calendar/builtins';
 import { parseToAbsoluteDay, formatAbsoluteDay } from '../calendar/CalendarDateText';
 import { daysInYear, fromAbsolute, monthsInYear, normalYearLength, toAbsolute } from '../calendar/CalendarEngine';
 import type { CalendarSystem } from '../calendar/types';
-import { chooseSnapLevel, generateTicks, snapDay, stepDay } from '../calendar/TimelineAxis';
+import { chooseSnapLevel, generateTicks, snapDay, snapSlots, stepDay } from '../calendar/TimelineAxis';
 import type { AxisView, TickLevel } from '../calendar/TimelineAxis';
 
 export interface TimelineRendererOptions {
@@ -119,6 +119,11 @@ const CHRONOLOGY_CHIP_TOP = 34;
 const WHEEL_LINE_HEIGHT = 16;
 /** Milestone gold, overridable through --sts-timeline-milestone. */
 const MILESTONE_GOLD = '#d9a520';
+/** Radius of an empty date slot on the lane baseline. */
+const SLOT_RADIUS = 3;
+const SLOT_COLOR = '#0b0f16';
+/** How close a pointer must be to an axis marker to grab it. */
+const MARKER_GRAB_RADIUS = 11;
 const MILESTONE_GOLD_EDGE = '#8a6410';
 
 export class NativeTimelineRenderer {
@@ -149,7 +154,16 @@ export class NativeTimelineRenderer {
     private viewStart = Date.now() - YEAR_MS;
     private viewEnd = Date.now() + YEAR_MS;
     private scrollTop = 0;
-    private dragging: { kind: 'pan' | 'move'; x: number; y: number; start: number; end: number; item?: NativeItem } | null = null;
+    private dragging: { kind: 'pan' | 'move' | 'marker'; x: number; y: number; start: number; end: number; item?: NativeItem } | null = null;
+    /**
+     * Where a marker drag would land. Held apart from the item so the lane does
+     * not repack under the cursor mid-drag — the item only moves on release.
+     */
+    private dragGhost: number | null = null;
+    /** Snap boundaries across the current view, in milliseconds. One per draw. */
+    private slotTimes: number[] = [];
+    /** Axis markers drawn this frame, as drag targets. */
+    private markerHits: { item: NativeItem; x: number; y: number }[] = [];
     private activePointers = new Map<number, { x: number; y: number }>();
     private pinch: { distance: number; span: number; anchorTime: number } | null = null;
     private referenceDate = new Date();
@@ -659,6 +673,8 @@ export class NativeTimelineRenderer {
         this.drawHorizontalCalendarLayers(ctx, width);
         this.drawEras(ctx, width, height);
         this.visibleItems = [];
+        this.markerHits = [];
+        this.slotTimes = this.computeSlotTimes();
         this.lanes.forEach(lane => this.drawLane(ctx, lane, width, height));
         this.drawForkBranches(ctx, width, height);
         this.drawConnectors(ctx, width, height);
@@ -871,6 +887,7 @@ export class NativeTimelineRenderer {
         ctx.beginPath();
         ctx.rect(SIDEBAR_WIDTH, this.axisHeight(), Math.max(0, width - SIDEBAR_WIDTH), height);
         ctx.clip();
+        this.drawSlots(ctx, baselineY, width);
         const startIndex = this.firstVisible(lane, this.viewStart);
         for (let i = startIndex; i < lane.items.length; i++) {
             const item = lane.items[i];
@@ -901,6 +918,10 @@ export class NativeTimelineRenderer {
                 ? new DOMRect(pointX - 7, baselineY - 7, 14, 14)
                 : new DOMRect(chipX, chipY, chipWidth, chipHeight);
             this.visibleItems.push(item);
+            // The marker is the drag handle. Unlike the chip it sits at the
+            // event's true instant and never moves between rows, so it stays
+            // where the pointer expects it.
+            if (this.slotsVisible() && this.isDraggable(item)) this.markerHits.push({ item, x: pointX, y: baselineY });
 
             if (collides) {
                 this.drawPointMarker(ctx, pointX, baselineY, item);
@@ -922,6 +943,7 @@ export class NativeTimelineRenderer {
             this.drawPointMarker(ctx, pointX, baselineY, item);
             this.drawItem(ctx, item, true, undefined, false);
         }
+        this.drawDropTarget(ctx, lane, baselineY, width, height);
         ctx.restore();
     }
 
@@ -1228,6 +1250,113 @@ export class NativeTimelineRenderer {
         return item === this.selected ? this.css('--interactive-accent', '#8b5cf6') : item.laneColor;
     }
 
+    /**
+     * Slots are the dates an event can be dropped on. They are only offered
+     * while editing, in the chronology layout, since the gantt bars have no
+     * single point to sit on and the vertical layout has no baseline to sit
+     * along.
+     */
+    /**
+     * Whether dragging this item can be written back honestly.
+     *
+     * Scenes and watched notes are not events — `saveEvent` would write them
+     * out as new event notes, which is why `openAt` refuses them too. An
+     * approximate date ("around 1420") parses to a real instant but writing it
+     * back would silently replace the author's vagueness with a false
+     * precision, so it gets no handle rather than a lossy one.
+     */
+    private isDraggable(item: NativeItem): boolean {
+        if (item.approximate || !Number.isFinite(item.start)) return false;
+        const tags = item.event.tags;
+        return !tags?.includes('scene') && !tags?.includes('watched-note');
+    }
+
+    /** The axis marker under the pointer, nearest first. */
+    private markerAt(x: number, y: number): NativeItem | null {
+        let best: NativeItem | null = null;
+        let bestDistance = MARKER_GRAB_RADIUS;
+        this.markerHits.forEach(hit => {
+            const distance = Math.hypot(hit.x - x, hit.y - y);
+            if (distance <= bestDistance) { bestDistance = distance; best = hit.item; }
+        });
+        return best;
+    }
+
+    private slotsVisible(): boolean {
+        return Boolean(this.options.editMode)
+            && !this.options.ganttMode
+            && this.options.timelineOrientation !== 'vertical';
+    }
+
+    private computeSlotTimes(): number[] {
+        if (!this.slotsVisible()) return [];
+        const epoch = this.unixEpochAbsoluteDay();
+        return snapSlots(this.calendarRegistry.getActiveCalendar(), this.axisView())
+            .map(day => (day - epoch) * DAY_MS);
+    }
+
+    /**
+     * Empty slots along the lane baseline: the same dot an event marker uses,
+     * hollow and unfilled, so an event and the place it could go read as one
+     * visual system rather than two.
+     *
+     * Drawn before the items so a marker simply paints over the slot it sits
+     * on. Nothing needs to be skipped, and an event whose date is *not* on a
+     * boundary correctly shows both — its marker plus the nearby slot it does
+     * not occupy.
+     */
+    private drawSlots(ctx: CanvasRenderingContext2D, baselineY: number, width: number): void {
+        if (!this.slotTimes.length) return;
+        ctx.save();
+        ctx.strokeStyle = this.css('--sts-timeline-slot', SLOT_COLOR);
+        ctx.lineWidth = 1;
+        ctx.globalAlpha = 0.55;
+        this.slotTimes.forEach(time => {
+            const x = this.timeToX(time, width);
+            if (x < SIDEBAR_WIDTH || x > width) return;
+            ctx.beginPath();
+            ctx.arc(x, baselineY, SLOT_RADIUS, 0, Math.PI * 2);
+            ctx.stroke();
+        });
+        ctx.restore();
+    }
+
+    /**
+     * The slot a marker drag is currently over, plus a guide down to the chips
+     * and the date it would be written as. Only drawn for the lane holding the
+     * dragged item.
+     */
+    private drawDropTarget(ctx: CanvasRenderingContext2D, lane: Lane, baselineY: number, width: number, height: number): void {
+        const dragging = this.dragging;
+        if (!dragging || dragging.kind !== 'marker' || !dragging.item) return;
+        if (dragging.item.laneId !== lane.id || this.dragGhost === null) return;
+        const x = this.timeToX(this.dragGhost, width);
+        const accent = this.css('--interactive-accent', '#7c3aed');
+
+        ctx.save();
+        ctx.strokeStyle = accent;
+        ctx.globalAlpha = 0.35;
+        ctx.setLineDash([3, 4]);
+        ctx.beginPath(); ctx.moveTo(x, baselineY); ctx.lineTo(x, height); ctx.stroke();
+        ctx.setLineDash([]);
+
+        ctx.globalAlpha = 1;
+        ctx.fillStyle = accent;
+        ctx.beginPath(); ctx.arc(x, baselineY, SLOT_RADIUS + 2.5, 0, Math.PI * 2); ctx.fill();
+
+        // Below the baseline, not above: the plot is clipped at the axis, so a
+        // label over the first lane's baseline would be sliced off.
+        const label = this.formatEditDate(this.dragGhost);
+        ctx.font = `600 11px ${this.css('--font-interface', 'sans-serif')}`;
+        const textWidth = ctx.measureText(label).width;
+        const boxX = Math.min(width - textWidth - 12, x + 9);
+        ctx.fillStyle = this.css('--background-secondary', '#1f2937');
+        ctx.fillRect(boxX, baselineY + 3, textWidth + 8, 16);
+        ctx.fillStyle = this.css('--text-normal', '#e5e7eb');
+        ctx.fillText(label, boxX + 4, baselineY + 15);
+        ctx.restore();
+    }
+
     private drawPointMarker(ctx: CanvasRenderingContext2D, x: number, y: number, item: NativeItem): void {
         ctx.save();
         ctx.fillStyle = this.markerColor(item);
@@ -1362,6 +1491,16 @@ export class NativeTimelineRenderer {
             this.dragging = null;
             return;
         }
+        // Markers are tested before chips: they sit on the baseline well above
+        // the first chip row, so the two never contend for the same pointer.
+        const marker = this.slotsVisible() ? this.markerAt(event.offsetX, event.offsetY) : null;
+        if (marker) {
+            this.selected = marker; this.options.onEventSelected?.(marker.event);
+            this.dragGhost = marker.start;
+            this.dragging = { kind: 'marker', x: event.clientX, y: event.clientY, start: marker.start, end: marker.end, item: marker };
+            this.scheduleDraw();
+            return;
+        }
         const item = this.hit(event.offsetX, event.offsetY);
         if (item) {
             this.selected = item; this.options.onEventSelected?.(item.event);
@@ -1465,7 +1604,9 @@ export class NativeTimelineRenderer {
             this.hideTooltip();
             return;
         }
-        const item = this.hit(event.offsetX, event.offsetY);
+        const marker = this.slotsVisible() ? this.markerAt(event.offsetX, event.offsetY) : null;
+        if (this.canvas) this.canvas.style.cursor = marker ? 'ew-resize' : '';
+        const item = marker ?? this.hit(event.offsetX, event.offsetY);
         if (item) this.showTooltip(item, event.offsetX, event.offsetY);
         else this.hideTooltip();
     }
@@ -1488,6 +1629,10 @@ export class NativeTimelineRenderer {
                 this.scrollTop = Math.max(0, Math.min(this.maxLaneScroll(), this.scrollTop - (event.clientY - this.dragging.y)));
                 this.dragging.y = event.clientY;
             }
+        } else if (this.dragging.kind === 'marker') {
+            // Ghost only. Moving the item here would repack the rows beneath
+            // the cursor on every frame, which reads as the lane jittering.
+            this.dragGhost = this.snap(this.dragging.start + deltaTime);
         } else if (this.dragging.item) {
             const duration = this.dragging.end - this.dragging.start;
             const snapped = this.snap(this.dragging.start + deltaTime);
@@ -1511,15 +1656,25 @@ export class NativeTimelineRenderer {
             return;
         }
         const dragging = this.dragging; this.dragging = null;
+        const ghost = this.dragGhost; this.dragGhost = null;
         this.canvas?.releasePointerCapture(event.pointerId);
-        if (dragging.kind === 'move' && dragging.item && dragging.item.start !== dragging.start) {
+
+        if (dragging.kind === 'marker' && dragging.item) {
+            // The item was never moved during the drag, so apply the ghost now.
+            if (ghost === null || ghost === dragging.start) { this.scheduleDraw(); return; }
+            const duration = dragging.end - dragging.start;
+            dragging.item.start = ghost; dragging.item.end = ghost + duration;
+        }
+        if ((dragging.kind === 'move' || dragging.kind === 'marker') && dragging.item && dragging.item.start !== dragging.start) {
             const item = dragging.item;
             const oldDate = item.event.dateTime;
             const duration = dragging.end - dragging.start;
             const startText = this.formatEditDate(item.start);
             const endText = duration > 0 ? this.formatEditDate(item.end) : '';
             item.event.dateTime = duration > 0 ? `${startText} to ${endText}` : startText;
-            try { await this.plugin.saveEvent(item.event); new Notice(`Moved “${item.event.name}” to ${item.event.dateTime}`); }
+            // The old date goes in the notice because there is no undo: it is
+            // the only record of where the event came from.
+            try { await this.plugin.saveEvent(item.event); new Notice(`Moved “${item.event.name}” from ${oldDate || 'no date'} to ${item.event.dateTime}`); }
             catch (error) { item.event.dateTime = oldDate; item.start = dragging.start; item.end = dragging.end; new Notice(`Could not move event: ${error instanceof Error ? error.message : String(error)}`); }
             this.rebuild(false);
         }

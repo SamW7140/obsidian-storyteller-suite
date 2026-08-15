@@ -5,6 +5,7 @@ import {
   generateTicks,
   chooseSnapLevel,
   snapDay,
+  snapSlots,
   stepDay,
   type AxisView,
 } from '../../src/calendar/TimelineAxis';
@@ -214,7 +215,7 @@ describe('TimelineAxis — snap resolution', () => {
     });
 
     it('falls back to months once days are narrower than the cursor', () => {
-      const view: AxisView = { startDay: dayOf(1990, 1, 1), endDay: dayOf(2000, 1, 1), widthPx: 900 };
+      const view: AxisView = { startDay: dayOf(2010, 1, 1), endDay: dayOf(2015, 1, 1), widthPx: 1200 };
       expect(chooseSnapLevel(G, view)).toBe('month');
     });
 
@@ -322,5 +323,122 @@ describe('TimelineAxis — snap resolution', () => {
         }
       }
     });
+  });
+});
+
+describe('TimelineAxis — snap slots', () => {
+  const dayOf = (y: number, m: number, d: number) =>
+    toAbsolute(G, { year: y, month: m - 1, day: d }).absoluteDay;
+
+  const UNEVEN: CalendarSystem = {
+    schemaVersion: CALENDAR_SCHEMA_VERSION,
+    id: 'slot-uneven',
+    name: 'Uneven',
+    baseUnit: 'day',
+    unitsPerDay: 1,
+    epochAbsoluteDay: 0,
+    months: [
+      { name: 'Short', days: 7 },
+      { name: 'Long', days: 33 },
+      { name: 'Middling', days: 20 },
+    ],
+    leapRule: { everyYears: 4, monthIndex: 0, extraDays: 1 },
+  };
+
+  const VIEWS: AxisView[] = [
+    { startDay: dayOf(2024, 3, 1), endDay: dayOf(2024, 3, 20), widthPx: 600 },
+    { startDay: dayOf(2024, 1, 1), endDay: dayOf(2025, 1, 1), widthPx: 900 },
+    { startDay: dayOf(2010, 1, 1), endDay: dayOf(2015, 1, 1), widthPx: 1200 },
+    { startDay: dayOf(1500, 1, 1), endDay: dayOf(2000, 1, 1), widthPx: 900 },
+    { startDay: 0, endDay: 400, widthPx: 700 },
+  ];
+
+  it('stays inside the view and stays ordered', () => {
+    for (const cal of [G, UNEVEN]) {
+      for (const view of VIEWS) {
+        const slots = snapSlots(cal, view);
+        for (const slot of slots) {
+          expect(slot).toBeGreaterThanOrEqual(view.startDay);
+          expect(slot).toBeLessThanOrEqual(view.endDay);
+        }
+        for (let i = 1; i < slots.length; i++) expect(slots[i]).toBeGreaterThan(slots[i - 1]);
+      }
+    }
+  });
+
+  it('agrees with snapDay — every slot is a fixed point, and snapping lands on one', () => {
+    for (const cal of [G, UNEVEN]) {
+      for (const view of VIEWS) {
+        const level = chooseSnapLevel(cal, view);
+        const slots = snapSlots(cal, view);
+        if (!slots.length) continue;
+        for (const slot of slots) expect(snapDay(cal, slot, level)).toBe(slot);
+        // Anything dropped well inside the view snaps onto a drawn slot.
+        const set = new Set(slots);
+        const span = view.endDay - view.startDay;
+        for (let f = 0.1; f < 0.9; f += 0.07) {
+          expect(set.has(snapDay(cal, view.startDay + span * f, level))).toBe(true);
+        }
+      }
+    }
+  });
+
+  it('keeps slots at least the minimum pitch apart on screen', () => {
+    for (const cal of [G, UNEVEN]) {
+      for (const view of VIEWS) {
+        const slots = snapSlots(cal, view);
+        for (let i = 1; i < slots.length; i++) {
+          const gapPx = projectDay(slots[i], view) - projectDay(slots[i - 1], view);
+          expect(gapPx).toBeGreaterThanOrEqual(13.9);
+        }
+      }
+    }
+  });
+
+  it('never returns more slots than the view has room for', () => {
+    for (const cal of [G, UNEVEN]) {
+      for (const view of VIEWS) {
+        expect(snapSlots(cal, view).length).toBeLessThanOrEqual(Math.ceil(view.widthPx / 14) + 1);
+      }
+    }
+  });
+
+  it('uses the calendar own month boundaries, not evenly spaced ones', () => {
+    // A view wide enough to snap by month in a calendar with 7/33/20-day months.
+    const start = toAbsolute(UNEVEN, { year: 2, month: 0, day: 1 }).absoluteDay;
+    const view: AxisView = { startDay: start, endDay: start + 240, widthPx: 600 };
+    expect(chooseSnapLevel(UNEVEN, view)).toBe('month');
+    const slots = snapSlots(UNEVEN, view);
+    const gaps = new Set<number>();
+    for (let i = 1; i < slots.length; i++) gaps.add(slots[i] - slots[i - 1]);
+    // 7, 33 and 20 all present; an evenly spaced grid would give a single gap.
+    expect(gaps.has(7)).toBe(true);
+    expect(gaps.has(33)).toBe(true);
+    expect(gaps.has(20)).toBe(true);
+  });
+
+  it('draws slots for every view a user would actually edit in', () => {
+    for (const view of VIEWS.slice(0, 3)) {
+      expect(snapSlots(G, view).length).toBeGreaterThan(0);
+    }
+  });
+
+  it('gives up rather than smearing when even years are too close together', () => {
+    // Five centuries across 900px puts years under 2px apart, and there is no
+    // unit coarser than a year to fall back to.
+    expect(snapSlots(G, { startDay: dayOf(1500, 1, 1), endDay: dayOf(2000, 1, 1), widthPx: 900 })).toEqual([]);
+  });
+
+  it('gives up when a short month undercuts the pitch the average allowed', () => {
+    // chooseSnapLevel sizes months by the 20-day average, but 'Short' is 7.
+    const start = toAbsolute(UNEVEN, { year: 2, month: 0, day: 1 }).absoluteDay;
+    const view: AxisView = { startDay: start, endDay: start + 240, widthPx: 260 };
+    expect(chooseSnapLevel(UNEVEN, view)).toBe('month');
+    expect(snapSlots(UNEVEN, view)).toEqual([]);
+  });
+
+  it('returns nothing for a degenerate view', () => {
+    expect(snapSlots(G, { startDay: 100, endDay: 100, widthPx: 500 })).toEqual([]);
+    expect(snapSlots(G, { startDay: 100, endDay: 50, widthPx: 500 })).toEqual([]);
   });
 });

@@ -11445,6 +11445,15 @@ body.mod-rtl .storyteller-group-members {
      without first reading the legend. Override these to restyle them. */
   --sts-timeline-milestone: #d9a520;
   --sts-timeline-milestone-edge: #8a6410;
+
+  /* Empty date slots on the lane baseline while editing: the same dot an event
+     marker uses, hollow, so a date and the event that could fill it read as one
+     system. */
+  --sts-timeline-slot: #0b0f16;
+}
+
+.theme-light .sts-native-timeline {
+  --sts-timeline-slot: #9aa4b2;
 }
 
 .sts-native-timeline:focus-visible {

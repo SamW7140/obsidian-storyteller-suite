@@ -78,11 +78,18 @@ function chooseLevel(cal: CalendarSystem, spanDays: number): TickLevel {
 }
 
 /**
- * Smallest on-screen width, in pixels, a snap unit may have. Below this the
- * boundaries are closer together than the user can aim, so the next coarser
- * unit is chosen instead.
+ * Smallest on-screen spacing, in pixels, between snap boundaries. Below this
+ * the next coarser unit is chosen instead.
+ *
+ * This doubles as the slot pitch: boundaries are drawn on the lane baseline as
+ * empty slots you drop events into, and a slot you cannot see is not a target.
+ * So it is set by legibility rather than by pointer precision — a few pixels
+ * would be aimable in principle but would carpet the baseline in dots.
  */
-const MIN_SNAP_PX = 4;
+const MIN_SNAP_PX = 14;
+
+/** Hard ceiling on generated slots, in case a degenerate view slips through. */
+const MAX_SLOTS = 512;
 
 /**
  * Pick the granularity drag edits should snap to.
@@ -173,6 +180,41 @@ export function stepDay(
     return toAbsolute(cal, { year: date.year + 1, month: 0, day: 1 }).absoluteDay;
   }
   return toAbsolute(cal, { year: date.year, month: target, day: 1 }).absoluteDay;
+}
+
+/**
+ * Every snap boundary in the visible window, in absolute days.
+ *
+ * These are the slots events drop into, so this must agree exactly with
+ * {@link snapDay} — it is built from the same two primitives rather than
+ * re-deriving a grid, so the two cannot drift apart.
+ *
+ * Returns nothing when the slots would be closer together than
+ * {@link MIN_SNAP_PX}. That happens two ways: {@link chooseSnapLevel} sizes
+ * months by the year's *average*, so a 7-day month in a calendar averaging 20
+ * can still come out too narrow; and past year level there is no coarser unit
+ * to fall back to, so a five-century view has years 2px apart. Neither is worth
+ * drawing, and showing no slots is honest where showing a smear is not. Snapping
+ * still works at those zooms, it just is not slot-driven.
+ */
+export function snapSlots(cal: CalendarSystem, view: AxisView): number[] {
+  const spanDays = view.endDay - view.startDay;
+  if (!(spanDays > 0)) return [];
+  const level = chooseSnapLevel(cal, view);
+  const minDays = (spanDays / Math.max(1, view.widthPx)) * MIN_SNAP_PX;
+  const slots: number[] = [];
+  let day = snapDay(cal, view.startDay, level);
+  if (day < view.startDay) day = stepDay(cal, day, level, 1);
+  while (day <= view.endDay && slots.length < MAX_SLOTS) {
+    const previous = slots[slots.length - 1];
+    if (previous !== undefined && day - previous < minDays) return [];
+    slots.push(day);
+    const next = stepDay(cal, day, level, 1);
+    // stepDay always advances, but a malformed calendar could stall the loop.
+    if (!(next > day)) break;
+    day = next;
+  }
+  return slots;
 }
 
 function yearLabel(cal: CalendarSystem, year: number): string {
