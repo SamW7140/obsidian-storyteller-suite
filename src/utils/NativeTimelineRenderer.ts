@@ -212,7 +212,10 @@ export class NativeTimelineRenderer {
     setGanttMode(value: boolean): void { this.options.ganttMode = value; this.rebuild(false); }
     setTimelineOrientation(value: 'horizontal' | 'vertical'): void { this.options.timelineOrientation = value; this.rebuild(false); }
     setGroupMode(value: TimelineRendererOptions['groupMode']): void { this.options.groupMode = value || 'none'; this.rebuild(false); }
-    setEditMode(value: boolean): void { this.options.editMode = value; this.container.toggleClass('is-editing', value); }
+    // Redraws because edit mode is not just an input mode: it decides whether
+    // the date slots are drawn and whether the markers register as drag
+    // targets, so toggling it without a repaint leaves both dead.
+    setEditMode(value: boolean): void { this.options.editMode = value; this.container.toggleClass('is-editing', value); this.scheduleDraw(); }
     setShowEras(value: boolean): void { this.options.showEras = value; this.scheduleDraw(); }
     setNarrativeOrder(value: boolean): void { this.options.narrativeOrder = value; this.rebuild(false); }
     setShowScenes(value: boolean): void { this.showScenes = value; this.rebuild(false); }
