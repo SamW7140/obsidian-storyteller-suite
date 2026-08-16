@@ -27,6 +27,13 @@ export const WIKI_LINK_ARRAY_FIELDS = new Set([
     'linkedChapters',
     'linkedScenes',
     'branches',
+    // Both sides of a claim hold entity names, so they link like every
+    // other name array. 'sources' deliberately does not: it is prose about
+    // where an account came from, not a pointer to a note.
+    'claims',
+    'disputes',
+    'claimedBy',
+    'disputedBy',
     'characters',
     'compendiumEntries',
     'compendiumSources',
@@ -144,7 +151,8 @@ const FRONTMATTER_WHITELISTS: Record<EntityType, Set<string>> = {
     'dndClass', 'dndSubclass', 'dndRace', 'dndLevel',
     'dndStr', 'dndDex', 'dndCon', 'dndInt', 'dndWis', 'dndCha',
     'dndMaxHp', 'dndCurrentHp', 'dndTempHp', 'dndAc', 'dndSpeed', 'dndProficiencyBonus',
-    'dndHitDice', 'dndConditions', 'dndSkillProficiencies', 'dndSavingThrowProficiencies'
+    'dndHitDice', 'dndConditions', 'dndSkillProficiencies', 'dndSavingThrowProficiencies',
+    'claims', 'disputes'
   ]),
   location: new Set([
     'id', 'entityType', 'name', 'locationType', 'type', 'region', 'status', 'parentLocation', 'parentLocationId',
@@ -159,7 +167,8 @@ const FRONTMATTER_WHITELISTS: Record<EntityType, Set<string>> = {
     'groups', 'profileImagePath', 'images', 'customFields', 'connections', 'color',
     'isMilestone', 'dependencies', 'progress', 'tags', 'narrativeMarkers', 'narrativeSequence',
     'linkedChapters', 'linkedScenes', 'compendiumEntries', 'branches', 'causes', 'causedBy',
-    'mapCoordinates', 'mapId', 'markerId', 'relatedMapIds', 'mapIcon', 'mapColor'
+    'mapCoordinates', 'mapId', 'markerId', 'relatedMapIds', 'mapIcon', 'mapColor',
+    'certainty', 'sources', 'claimedBy', 'disputedBy', 'sessionId', 'sessionName'
   ]),
   item: new Set([
     // currentOwner is deliberately absent — it is the legacy scalar that owners

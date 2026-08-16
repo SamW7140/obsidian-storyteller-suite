@@ -437,6 +437,18 @@ export interface Character {
     
     /** Names/links of events this character was involved in */
     events?: string[];
+
+    /**
+     * Events this character says happened, mirrored by Event.claimedBy.
+     *
+     * Distinct from `events`, which is who was there. A character can claim an
+     * event they were nowhere near, and that gap is the whole point: it is what
+     * lets a timeline hold a lie.
+     */
+    claims?: string[];
+
+    /** Events this character says did not happen, mirrored by Event.disputedBy */
+    disputes?: string[];
     
     /** User-defined custom fields for additional character data */
     customFields?: Record<string, string>;
@@ -881,6 +893,34 @@ export interface Event {
 
     /** Narrative sequence number for non-chronological ordering (0-based index) */
     narrativeSequence?: number;
+
+    /**
+     * How solid this event is.
+     *
+     * Not every event on a timeline is a fact. A rumour the party heard, a
+     * legend a culture tells about itself, and a death three people watched are
+     * all events, and drawing them identically claims a certainty the story
+     * does not have.
+     */
+    certainty?: 'established' | 'reported' | 'disputed' | 'legendary';
+
+    /** Where the account of this event comes from, in the writer's own words */
+    sources?: string[];
+
+    /** Characters who assert this happened, mirrored by Character.claims */
+    claimedBy?: string[];
+
+    /** Characters who deny this happened, mirrored by Character.disputes */
+    disputedBy?: string[];
+
+    /**
+     * Campaign session that produced this event, when it came out of play
+     * rather than out of planning.
+     */
+    sessionId?: string;
+
+    /** Readable name of the session, kept alongside the id the way chapters do */
+    sessionName?: string;
 
     /** ID of the map where this event is primarily displayed */
     mapId?: string;

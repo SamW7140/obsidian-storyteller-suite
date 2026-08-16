@@ -418,6 +418,81 @@ export class EventModal extends ResponsiveModal {
                 text.inputEl.rows = 3;
             });
 
+        // --- Provenance: how solid this event is, and who says so ---
+        //
+        // A rumour, a legend and a death three people watched are all events.
+        // Drawing them identically claims a certainty the story does not have,
+        // so the timeline needs somewhere to read that from.
+        contentEl.createEl('h3', { text: 'Provenance' });
+
+        new Setting(contentEl)
+            .setName('Certainty')
+            .setDesc('How firmly this event is established. Anything less than established draws faded on the timeline.')
+            .addDropdown(dropdown => dropdown
+                .addOptions({
+                    established: 'Established',
+                    reported: 'Reported',
+                    disputed: 'Disputed',
+                    legendary: 'Legendary'
+                })
+                .setValue(this.event.certainty || 'established')
+                .onChange(value => {
+                    // Established is the absence of a claim rather than a claim
+                    // of its own, so it is stored as nothing at all. Otherwise
+                    // every event ever written gains a field on its next save.
+                    this.event.certainty = value === 'established' ? undefined : value as Event['certainty'];
+                }));
+
+        new Setting(contentEl)
+            .setName('Sources')
+            .setDesc('Where the account of this event comes from, one per line')
+            .addTextArea(text => {
+                text
+                    .setValue((this.event.sources || []).join('\n'))
+                    .setPlaceholder('E.g., the abbey chronicle')
+                    .onChange(value => {
+                        const lines = value.split('\n').map(line => line.trim()).filter(Boolean);
+                        this.event.sources = lines.length ? lines : undefined;
+                    });
+                text.inputEl.rows = 3;
+            });
+
+        const claimList = (label: string, description: string, read: () => string[], write: (names: string[]) => void) => {
+            const setting = new Setting(contentEl).setName(label).setDesc(description);
+            const display = setting.controlEl.createSpan({ text: read().join(', ') || 'None' });
+            setting.addButton(button => button
+                .setButtonText('Add character')
+                .onClick(() => {
+                    new CharacterSuggestModal(this.app, this.plugin, (character) => {
+                        if (!character?.name) return;
+                        const names = read();
+                        if (names.includes(character.name)) return;
+                        write([...names, character.name]);
+                        display.setText(read().join(', ') || 'None');
+                    }).open();
+                }))
+                .addButton(button => button
+                    .setButtonText('Clear')
+                    .onClick(() => {
+                        write([]);
+                        display.setText('None');
+                    }));
+        };
+
+        claimList(
+            'Claimed by',
+            'Characters who say this happened. Not the same as who was there.',
+            () => this.event.claimedBy || [],
+            names => { this.event.claimedBy = names.length ? names : undefined; }
+        );
+
+        claimList(
+            'Disputed by',
+            'Characters who say this did not happen',
+            () => this.event.disputedBy || [],
+            names => { this.event.disputedBy = names.length ? names : undefined; }
+        );
+
         const profileImageSetting = new Setting(contentEl)
             .setName(t('image'))
             .setDesc('')

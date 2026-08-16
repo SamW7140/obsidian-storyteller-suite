@@ -148,6 +148,32 @@ export class EntitySyncService {
                 return character.name || character.id || '';
             }
         },
+        // Event ↔ Characters (claimedBy[] ↔ claims[])
+        //
+        // Separate from characters/events on purpose. That pair says who was
+        // present; this one says who says so, and a character can claim an
+        // event they were nowhere near.
+        {
+            sourceType: 'event',
+            sourceField: 'claimedBy',
+            targetType: 'character',
+            targetField: 'claims',
+            bidirectional: true,
+            isArray: true,
+            transform: (characterName: string, event: Event) => event.name || event.id || '',
+            reverseTransform: (eventName: string, character: Character) => character.name || character.id || ''
+        },
+        // Event ↔ Characters (disputedBy[] ↔ disputes[])
+        {
+            sourceType: 'event',
+            sourceField: 'disputedBy',
+            targetType: 'character',
+            targetField: 'disputes',
+            bidirectional: true,
+            isArray: true,
+            transform: (characterName: string, event: Event) => event.name || event.id || '',
+            reverseTransform: (eventName: string, character: Character) => character.name || character.id || ''
+        },
         // Item ↔ Character (owners[] ↔ ownedItems[])
         {
             sourceType: 'item',

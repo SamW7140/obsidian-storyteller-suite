@@ -696,6 +696,23 @@ export class NativeTimelineRenderer {
         return Boolean(fork) && !fork?.linkedEvents?.includes(this.eventKey(event));
     }
 
+    /**
+     * How solidly an event's chip is drawn.
+     *
+     * A rumour and a death three people watched are both events, and drawing
+     * them identically claims a certainty the story does not have. The fade is
+     * deliberately gentle: this marks an event as unconfirmed, it does not hide
+     * it, and an event nobody can read is worse than one nobody has confirmed.
+     */
+    private certaintyAlpha(event: Event): number {
+        switch (event.certainty) {
+            case 'reported': return 0.8;
+            case 'disputed': return 0.62;
+            case 'legendary': return 0.55;
+            default: return 1;
+        }
+    }
+
     /** A usable colour string, or undefined when the value is blank or junk. */
     private normalizeColor(value: string | undefined): string | undefined {
         const trimmed = value?.trim();
@@ -1359,7 +1376,7 @@ export class NativeTimelineRenderer {
         const dateLabel = this.verticalEventDate(item.start, calendar);
         const meta = this.lanes.length > 1 ? item.laneLabel : (item.event.status || (item.event.isMilestone ? 'Milestone' : 'Event'));
         ctx.save();
-        ctx.globalAlpha = item.inherited ? 0.45 : 1;
+        ctx.globalAlpha = item.inherited ? 0.45 : this.certaintyAlpha(item.event);
         ctx.fillStyle = this.css('--background-secondary', '#1f2937');
         this.roundedRect(ctx, rect.x, rect.y, rect.width, rect.height, 4); ctx.fill();
         ctx.strokeStyle = item === this.selected ? accent : this.css('--background-modifier-border', '#374151');
@@ -1398,7 +1415,7 @@ export class NativeTimelineRenderer {
     private drawItem(ctx: CanvasRenderingContext2D, item: NativeItem, isPoint: boolean, labelOverride?: string, withMarker = true): void {
         const rect = item.rect!;
         ctx.save();
-        ctx.globalAlpha = item.inherited ? 0.45 : 1;
+        ctx.globalAlpha = item.inherited ? 0.45 : this.certaintyAlpha(item.event);
         const accent = item.customColor
             || (item === this.selected ? this.css('--interactive-accent', '#8b5cf6') : item.laneColor);
         if (isPoint) {
@@ -1986,6 +2003,16 @@ export class NativeTimelineRenderer {
 
         if (this.lanes.length > 1 && item.laneLabel) {
             tooltip.createDiv({ cls: 'sts-native-timeline-tooltip-meta', text: item.laneLabel });
+        }
+
+        // A faded chip needs to say why it is faded, or it reads as a rendering
+        // fault rather than as an event nobody has confirmed.
+        if (event.certainty && event.certainty !== 'established') {
+            const who = event.claimedBy?.length ? ` (${event.claimedBy.join(', ')})` : '';
+            tooltip.createDiv({ cls: 'sts-native-timeline-tooltip-meta', text: `${event.certainty}${who}` });
+        }
+        if (event.disputedBy?.length) {
+            tooltip.createDiv({ cls: 'sts-native-timeline-tooltip-meta', text: `disputed by ${event.disputedBy.join(', ')}` });
         }
 
         if (event.description) {
