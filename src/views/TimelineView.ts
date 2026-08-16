@@ -455,6 +455,10 @@ export class TimelineView extends ItemView {
 
         try {
             await this.renderer.initialize();
+            // Layers are not constructor options, so a fresh renderer starts
+            // with both off no matter what the Show menu says.
+            if (this.showScenes) this.renderer.setShowScenes(true);
+            if (this.showWatchedNotes) this.renderer.setShowWatchedNotes(true);
             this.renderer.applyFilters(this.currentState.filters);
             this.scheduleTimelineRedraw();
             this.updateSearchDropdown();
@@ -781,11 +785,17 @@ export class TimelineView extends ItemView {
     }
 
     /**
-     * Get view state for persistence
+     * Get view state for persistence.
+     *
+     * Everything the toolbar can change belongs here. Anything left out is a
+     * control that silently forgets itself the next time the workspace loads,
+     * and `setState` already reads several keys that nothing was writing.
      */
     getState(): Record<string, unknown> {
         // Capture current window range for zoom/scroll persistence
         const visibleRange = this.renderer?.getVisibleRange();
+        const setOrUndefined = (value: Set<string> | undefined) =>
+            value ? Array.from(value) : undefined;
 
         return {
             ganttMode: this.currentState.ganttMode,
@@ -794,14 +804,22 @@ export class TimelineView extends ItemView {
             stackEnabled: this.currentState.stackEnabled,
             density: this.currentState.density,
             editMode: this.currentState.editMode,
+            showEras: this.currentState.showEras,
+            narrativeOrder: this.currentState.narrativeOrder,
+            currentTrackId: this.currentState.currentTrackId,
+            currentForkId: this.currentState.currentForkId,
+            // Layers live on the view rather than in TimelineUIState, but they
+            // are toolbar state all the same.
+            showScenes: this.showScenes,
+            showWatchedNotes: this.showWatchedNotes,
             filters: {
                 milestonesOnly: this.currentState.filters.milestonesOnly,
-                characters: this.currentState.filters.characters ?
-                    Array.from(this.currentState.filters.characters) : undefined,
-                locations: this.currentState.filters.locations ?
-                    Array.from(this.currentState.filters.locations) : undefined,
-                groups: this.currentState.filters.groups ?
-                    Array.from(this.currentState.filters.groups) : undefined
+                characters: setOrUndefined(this.currentState.filters.characters),
+                locations: setOrUndefined(this.currentState.filters.locations),
+                groups: setOrUndefined(this.currentState.filters.groups),
+                tags: setOrUndefined(this.currentState.filters.tags),
+                eras: setOrUndefined(this.currentState.filters.eras),
+                forkId: this.currentState.filters.forkId
             },
             // Save visible window range for restoring zoom/scroll position
             visibleRange: visibleRange ? {
@@ -811,16 +829,29 @@ export class TimelineView extends ItemView {
         };
     }
 
+    /** Everything in the persisted state except the window, which drifts on every pan. */
+    private stateSignature(): string {
+        const state = this.getState();
+        state.visibleRange = undefined;
+        return JSON.stringify(state);
+    }
+
     /**
-     * Set view state from persistence
+     * Set view state from persistence.
+     *
+     * The state object is updated in place rather than replaced. Both builders
+     * were handed this exact object in the constructor and hold their own
+     * reference to it, so swapping it out left the toolbar driving one state
+     * and the view reading another.
      */
-     
+
     async setState(state: unknown, result: ViewStateResult): Promise<void> {
         await super.setState(state, result);
 
         if (isRecord(state)) {
+            const before = this.stateSignature();
             const filters = restoreFilters(state.filters);
-            this.currentState = {
+            const restored: TimelineViewState = {
                 ganttMode: state.ganttMode === true,
                 timelineOrientation: state.timelineOrientation === 'vertical' ? 'vertical' : 'horizontal',
                 groupMode: isGroupMode(state.groupMode) ? state.groupMode : (this.plugin.settings.defaultTimelineGroupMode || 'location'),
@@ -829,8 +860,22 @@ export class TimelineView extends ItemView {
                 editMode: state.editMode === true,
                 filters,
                 showEras: state.showEras === true,
-                narrativeOrder: state.narrativeOrder === true
+                narrativeOrder: state.narrativeOrder === true,
+                currentTrackId: typeof state.currentTrackId === 'string' ? state.currentTrackId : undefined,
+                currentForkId: typeof state.currentForkId === 'string' ? state.currentForkId : undefined
             };
+            Object.assign(this.currentState, restored);
+            this.showScenes = state.showScenes === true;
+            this.showWatchedNotes = state.showWatchedNotes === true;
+
+            // A restore can land after onOpen has already drawn the toolbar off
+            // the defaults, and nothing else re-reads state afterwards. Only when
+            // something actually moved: setState also fires on workspace churn
+            // that has nothing to do with the timeline.
+            if (this.toolbarEl && this.stateSignature() !== before) {
+                this.buildToolbar();
+                await this.buildTimeline();
+            }
 
             // Restore visible window range if available
             if (isRecord(state.visibleRange) && this.renderer) {
