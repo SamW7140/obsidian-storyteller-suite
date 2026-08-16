@@ -87,6 +87,8 @@ export class TimelineView extends ItemView {
     private resizeObserver: ResizeObserver | null = null;
     private showScenes = false;
     private showWatchedNotes = false;
+    /** Branch list the toolbar was last built against. */
+    private lastBranchSignature = '';
 
     constructor(leaf: WorkspaceLeaf, plugin: StorytellerSuitePlugin) {
         super(leaf);
@@ -182,6 +184,7 @@ export class TimelineView extends ItemView {
     private buildToolbar(): void {
         if (!this.toolbarEl) return;
         this.toolbarEl.empty();
+        this.lastBranchSignature = this.branchSignature();
 
         // What am I looking at
         const scope = this.toolbarEl.createDiv('storyteller-toolbar-group');
@@ -268,8 +271,30 @@ export class TimelineView extends ItemView {
         dropdown.addOption('main', 'Main timeline');
         dropdown.addOption('__compare__', 'Compare branches');
         forks.forEach(fork => { dropdown.addOption(fork.id, fork.name); });
+        // Same rule as tracks: management belongs next to the list it manages.
+        dropdown.addOption(MANAGE_OPTION, 'Manage branches…');
         dropdown.setValue(this.currentState.currentForkId || 'main');
-        dropdown.onChange((selection: string) => { void this.selectFork(selection); });
+        dropdown.onChange((selection: string) => {
+            if (selection === MANAGE_OPTION) {
+                dropdown.setValue(this.currentState.currentForkId || 'main');
+                this.openBranchManager();
+                return;
+            }
+            void this.selectFork(selection);
+        });
+    }
+
+    private openBranchManager(): void {
+        void (async () => {
+            const { TimelineForkListModal } = await import('../modals/TimelineForkListModal');
+            new TimelineForkListModal(this.app, this.plugin).open();
+        })();
+    }
+
+    /** Open a branch from outside the view, rebuilding the picker around it. */
+    async showBranch(forkId: string): Promise<void> {
+        this.buildToolbar();
+        await this.selectFork(forkId);
     }
 
     private openTrackManager(): void {
@@ -937,10 +962,20 @@ export class TimelineView extends ItemView {
      * Refresh the timeline with current data
      */
     async refresh(): Promise<void> {
-        if (this.renderer) {
-            await this.renderer.refresh();
-            this.updateFooterStatus();
-            this.updateSearchDropdown();
-        }
+        if (!this.renderer) return;
+        // The Branch picker is built from the fork list, and refresh only ever
+        // redrew the canvas. A branch created while this view was open never
+        // showed up in the picker, which read as forks being broken when the
+        // only thing missing was the control that selects one.
+        const signature = this.branchSignature();
+        if (signature !== this.lastBranchSignature) this.buildToolbar();
+        await this.renderer.refresh();
+        this.updateFooterStatus();
+        this.updateSearchDropdown();
+    }
+
+    /** Changes whenever a branch is added, renamed or removed. */
+    private branchSignature(): string {
+        return this.plugin.getTimelineForks().map(fork => `${fork.id}:${fork.name}`).join('|');
     }
 }

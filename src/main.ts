@@ -3223,13 +3223,10 @@ export default class StorytellerSuitePlugin extends Plugin {
 			id: 'view-timeline-forks',
 			name: 'View timeline forks',
 			callback: () => {
-				const forks = this.getTimelineForks();
-				if (forks.length === 0) {
-					new Notice('No timeline forks yet. Create your first fork!');
-					return;
-				}
-				new Notice(`${forks.length} timeline fork(s) found`);
-				// TODO: Create TimelineForkListModal for better visualization
+				if (!this.ensureActiveStoryOrGuide()) return;
+				void import('./modals/TimelineForkListModal').then(({ TimelineForkListModal }) => {
+					new TimelineForkListModal(this.app, this).open();
+				});
 			}
 		});
 
@@ -7754,6 +7751,10 @@ export default class StorytellerSuitePlugin extends Plugin {
             await this.saveSettings();
         }
 
+        // Any open timeline has to be told, or the branch picker will not
+        // list the branch that was just made and forks look like they do
+        // nothing at all.
+        this.refreshTimelineViews();
         new Notice(`Timeline fork "${name}" created`);
         return fork;
     }
@@ -7784,6 +7785,7 @@ export default class StorytellerSuitePlugin extends Plugin {
     async updateTimelineFork(fork: TimelineFork): Promise<void> {
         if (this.timelineEntities.migrated) {
             await this.timelineEntities.save('branch', fork);
+            this.refreshTimelineViews();
             new Notice(`Timeline fork "${fork.name}" updated`);
             return;
         }
@@ -7791,6 +7793,7 @@ export default class StorytellerSuitePlugin extends Plugin {
         if (index !== undefined && index >= 0) {
             this.settings.timelineForks![index] = this.stampTimelineEntry(fork);
             await this.saveSettings();
+            this.refreshTimelineViews();
             new Notice(`Timeline fork "${fork.name}" updated`);
         } else {
             new Notice(`Error: Timeline fork not found`);
@@ -7810,6 +7813,7 @@ export default class StorytellerSuitePlugin extends Plugin {
             this.settings.timelineForks = this.settings.timelineForks?.filter(f => f.id !== forkId);
             await this.saveSettings();
         }
+        this.refreshTimelineViews();
         new Notice(`Timeline fork "${fork.name}" deleted`);
     }
 

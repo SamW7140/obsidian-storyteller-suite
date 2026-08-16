@@ -11890,3 +11890,83 @@ body.mod-rtl .storyteller-group-members {
   color: var(--text-error);
   font-size: var(--font-ui-smaller);
 }
+
+/* Branch list: one card per timeline fork. */
+.storyteller-fork-list {
+  max-height: 60vh;
+  overflow-y: auto;
+  margin: 1em 0;
+}
+
+.storyteller-fork-card {
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 6px;
+  margin-bottom: 0.75em;
+  background: var(--background-secondary);
+}
+
+.storyteller-fork-content {
+  padding: 0.75em;
+}
+
+.storyteller-fork-header {
+  display: flex;
+  align-items: center;
+  gap: 0.5em;
+  flex-wrap: wrap;
+  margin-bottom: 0.5em;
+}
+
+.storyteller-fork-header h3 {
+  margin: 0;
+  font-size: 1em;
+}
+
+/* The colour this branch draws in on the timeline, so the card and the curve
+   can be matched up by eye. */
+.storyteller-fork-swatch {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: var(--interactive-accent);
+  flex: 0 0 auto;
+}
+
+.storyteller-fork-status-badge {
+  font-size: var(--font-ui-smaller);
+  padding: 0.1em 0.5em;
+  border-radius: 10px;
+  background: var(--background-modifier-border);
+  color: var(--text-muted);
+}
+
+/* Canon is settled and merged is finished, so they read as normal text.
+   Exploring is unfinished and abandoned is set aside, and both should say so
+   at a glance rather than only in the word. */
+.storyteller-fork-status-badge.is-canon {
+  background: var(--interactive-accent);
+  color: var(--text-on-accent);
+}
+
+.storyteller-fork-status-badge.is-abandoned {
+  opacity: 0.6;
+  text-decoration: line-through;
+}
+
+.storyteller-fork-meta,
+.storyteller-fork-description {
+  font-size: var(--font-ui-smaller);
+  color: var(--text-muted);
+  margin-bottom: 0.2em;
+}
+
+.storyteller-fork-actions {
+  display: flex;
+  gap: 0.4em;
+  margin-top: 0.6em;
+  flex-wrap: wrap;
+}
+
+.storyteller-fork-action-btn {
+  font-size: var(--font-ui-smaller);
+}
