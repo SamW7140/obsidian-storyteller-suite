@@ -13,6 +13,7 @@ import type { CalendarSystem } from '../calendar/types';
 import { chooseSnapResolution, generateTicks, snapDay, snapSlots, stepDay } from '../calendar/TimelineAxis';
 import type { AxisView, SnapResolution } from '../calendar/TimelineAxis';
 import { isEventInFork, isEventOnMain, orderForksByParent } from './ForkVisibility';
+import { chooseConnectorEnds } from './ConnectorGeometry';
 
 export interface TimelineRendererOptions {
     ganttMode?: boolean;
@@ -1805,9 +1806,14 @@ export class NativeTimelineRenderer {
         if (this.options.dependencyArrowStyle === 'dashed') ctx.setLineDash([8, 5]);
         if (this.options.dependencyArrowStyle === 'dotted') ctx.setLineDash([2, 4]);
         const endsOf = (target: NativeItem, ref: string): { from: DOMRect; to: DOMRect } | null => {
-            const source = (byKey.get(ref) || [])[0];
             const targetEntry = (byKey.get(this.eventKey(target.event)) || []).find(entry => entry.item === target);
-            if (!source || !targetEntry) return null;
+            if (!targetEntry) return null;
+            const sources = byKey.get(ref) || [];
+            // An event can sit in several lanes at once, so prefer the copy in
+            // the lane the arrow is already in. Taking the first one meant an
+            // arrow could leave a lane that has nothing to do with either end.
+            const source = sources.find(entry => entry.lane === targetEntry.lane) || sources[0];
+            if (!source) return null;
             return {
                 from: this.itemRect(source.item, source.lane, width),
                 to: this.itemRect(target, targetEntry.lane, width)
@@ -1816,7 +1822,7 @@ export class NativeTimelineRenderer {
         if (this.options.ganttMode && this.options.showDependencies) {
             this.lanes.forEach(lane => lane.items.forEach(target => (target.event.dependencies || []).forEach(ref => {
                 const ends = endsOf(target, ref);
-                if (ends) this.arrow(ctx, ends.from.right, ends.from.y + ends.from.height / 2, ends.to.x, ends.to.y + ends.to.height / 2);
+                if (ends) this.connector(ctx, ends.from, ends.to);
             })));
         }
         if (this.options.narrativeOrder) {
@@ -2530,23 +2536,62 @@ export class NativeTimelineRenderer {
     private arrow(ctx: CanvasRenderingContext2D, x1: number, y1: number, x2: number, y2: number): void {
         ctx.beginPath();
         ctx.moveTo(x1, y1);
+        // Last control point of the curve, which is what the head has to aim
+        // along. Drawing the head at a fixed angle pointed it right even when
+        // the line arrived from the right or from above.
+        let controlX: number;
+        let controlY: number;
         if (Math.abs(y1 - y2) < 2) {
             const dip = y1 + this.rowHeight() * 0.55;
-            const inset = Math.min(60, Math.max(12, (x2 - x1) * 0.35));
-            ctx.bezierCurveTo(x1 + inset, dip, x2 - inset, dip, x2, y2);
+            // Signed, so a connector running right to left bows the same way
+            // instead of turning itself inside out.
+            const reach = Math.min(60, Math.max(12, Math.abs(x2 - x1) * 0.35)) * (x2 >= x1 ? 1 : -1);
+            ctx.bezierCurveTo(x1 + reach, dip, x2 - reach, dip, x2, y2);
+            controlX = x2 - reach;
+            controlY = dip;
+        } else if (Math.abs(x2 - x1) < 24) {
+            // Nearly vertical: bend through the midpoint of the gap between the
+            // rows rather than bulging sideways across the bars.
+            const midY = (y1 + y2) / 2;
+            ctx.bezierCurveTo(x1, midY, x2, midY, x2, y2);
+            controlX = x2;
+            controlY = midY;
         } else {
-            const mid = Math.max(x1 + 18, (x1 + x2) / 2);
+            const mid = x2 >= x1 ? Math.max(x1 + 18, (x1 + x2) / 2) : Math.min(x1 - 18, (x1 + x2) / 2);
             ctx.bezierCurveTo(mid, y1, mid, y2, x2, y2);
+            controlX = mid;
+            controlY = y2;
         }
         ctx.stroke();
+        this.arrowHead(ctx, x2, y2, Math.atan2(y2 - controlY, x2 - controlX));
+    }
+
+    /**
+     * The head, turned to face the way the line arrived.
+     *
+     * Undashed whatever the connector style is: a head drawn in dots reads as a
+     * stray mark beside the line rather than as its direction.
+     */
+    private arrowHead(ctx: CanvasRenderingContext2D, x: number, y: number, angle: number): void {
+        ctx.save();
+        ctx.setLineDash([]);
+        ctx.translate(x, y);
+        ctx.rotate(angle);
         ctx.beginPath();
-        ctx.moveTo(x2 - 7, y2 - 4);
-        ctx.lineTo(x2, y2);
-        ctx.lineTo(x2 - 7, y2 + 4);
+        ctx.moveTo(-7, -4);
+        ctx.lineTo(0, 0);
+        ctx.lineTo(-7, 4);
         ctx.stroke();
+        ctx.restore();
+    }
+
+    /** An arrow between two bars, entering on whichever side the source is. */
+    private connector(ctx: CanvasRenderingContext2D, from: DOMRect, to: DOMRect): void {
+        const ends = chooseConnectorEnds(from, to);
+        this.arrow(ctx, ends.x1, ends.y1, ends.x2, ends.y2);
     }
     private roundedRect(ctx: CanvasRenderingContext2D, x: number, y: number, width: number, height: number, radius: number): void { const r = Math.min(radius, width / 2, height / 2); ctx.beginPath(); ctx.moveTo(x + r, y); ctx.lineTo(x + width - r, y); ctx.quadraticCurveTo(x + width, y, x + width, y + r); ctx.lineTo(x + width, y + height - r); ctx.quadraticCurveTo(x + width, y + height, x + width - r, y + height); ctx.lineTo(x + r, y + height); ctx.quadraticCurveTo(x, y + height, x, y + height - r); ctx.lineTo(x, y + r); ctx.quadraticCurveTo(x, y, x + r, y); ctx.closePath(); }
-    private curve(ctx: CanvasRenderingContext2D, source: DOMRect, target: DOMRect): void { ctx.save(); ctx.setLineDash([5, 4]); this.arrow(ctx, source.right, source.y + source.height / 2, target.x, target.y + target.height / 2); ctx.restore(); }
+    private curve(ctx: CanvasRenderingContext2D, source: DOMRect, target: DOMRect): void { ctx.save(); ctx.setLineDash([5, 4]); this.connector(ctx, source, target); ctx.restore(); }
     private resizeCanvas(): void { if (!this.canvas || !this.root || !this.ctx) return; const ratio = Math.max(1, window.devicePixelRatio || 1); const width = Math.max(1, this.root.clientWidth); const height = Math.max(1, this.root.clientHeight); this.canvas.width = Math.round(width * ratio); this.canvas.height = Math.round(height * ratio); this.canvas.style.width = `${width}px`; this.canvas.style.height = `${height}px`; this.ctx.setTransform(ratio, 0, 0, ratio, 0, 0); }
     private toCsv(): string { const escape = (value: unknown) => `"${String(value ?? '').replace(/"/g, '""')}"`; return ['Name,Date,Status,Location,Characters,Description', ...this.getVisibleEvents().map(event => [event.name, event.dateTime, event.status, event.location, (event.characters || []).join('; '), event.description].map(escape).join(','))].join('\n'); }
     private async writeExport(extension: string, content: string): Promise<void> { const path = `StorytellerSuite/Exports/timeline-${new Date().toISOString().slice(0, 10)}.${extension}`; const existing = this.app.vault.getAbstractFileByPath(path); if (existing instanceof TFile) await this.app.vault.modify(existing, content); else { const folder = 'StorytellerSuite/Exports'; if (!this.app.vault.getAbstractFileByPath(folder)) await this.app.vault.createFolder(folder); await this.app.vault.create(path, content); } new Notice(`Timeline exported to ${path}`); }
