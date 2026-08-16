@@ -11868,3 +11868,25 @@ body.mod-rtl .storyteller-group-members {
 .storyteller-timeline-view {
   container-type: inline-size;
 }
+
+/* A timeline embedded in a note through a ```timeline fenced block. Bordered
+   because it sits in running prose and needs an edge to read as a figure
+   rather than as the page continuing. */
+.sts-timeline-block {
+  width: 100%;
+  margin: 0.75em 0;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+/* Typos in a block's settings, listed above it. Loud on purpose: a filter that
+   silently did not apply is worse than an ugly warning. */
+.sts-timeline-block-errors {
+  margin: 0.75em 0 0.25em;
+  padding: 0.5em 0.75em;
+  border-radius: 6px;
+  background: var(--background-modifier-error);
+  color: var(--text-error);
+  font-size: var(--font-ui-smaller);
+}

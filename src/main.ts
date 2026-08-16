@@ -102,6 +102,7 @@ import { WordCountTracker } from './compile';
 import type { SessionStats } from './compile';
 import { createLedgerViewExtension, registerLedgerBlockProcessor } from './extensions/LedgerEditorExtension';
 import { createBranchViewExtension, registerBranchBlockProcessors } from './extensions/BranchBlockExtension';
+import { registerTimelineBlockProcessor } from './extensions/TimelineBlockExtension';
 import { CampaignSession } from './types';
 
 /** Runtime-only flags added to entity objects during save/sync to prevent recursion. Not persisted. */
@@ -1704,6 +1705,10 @@ export default class StorytellerSuitePlugin extends Plugin {
 		this.registerEditorExtension(createBranchViewExtension());
 		registerBranchBlockProcessors(this.app, this);
 
+		// Register the ```timeline fenced block, which puts a live timeline in
+		// any note the vault can render.
+		registerTimelineBlockProcessor(this);
+
 		this.registerMarkdownPostProcessor((el) => {
 			const headings = el.querySelectorAll('h2');
 			headings.forEach((h) => {
@@ -2394,6 +2399,24 @@ export default class StorytellerSuitePlugin extends Plugin {
 				void this.activateView();
 			}
 		});
+
+        this.addCommand({
+            id: 'insert-timeline-block',
+            name: 'Insert timeline block',
+            // Editor command rather than a palette action on the view: the
+            // block is a thing you put in a note, and nobody would guess the
+            // fence's name and its settings from the timeline view.
+            editorCallback: (editor) => {
+                editor.replaceSelection([
+                    '```timeline',
+                    'group: character',
+                    'height: 380',
+                    'eras: true',
+                    '```',
+                    ''
+                ].join('\n'));
+            }
+        });
 
         this.addCommand({
             id: 'open-getting-started-guide',
