@@ -324,6 +324,8 @@ const FRONTMATTER_LINK_ONLY_SCALAR_FIELDS = new Set([
         tracks: TimelineTrack[];
         forks: TimelineFork[];
     };
+    /** The user closed the migration prompt without answering, so stop opening it. */
+    timelineMigrationDeferred?: boolean;
     enableAdvancedTimeline?: boolean;
     autoDetectConflicts?: boolean;
 
@@ -516,6 +518,7 @@ const FRONTMATTER_LINK_ONLY_SCALAR_FIELDS = new Set([
     timelineEras: [],
     timelineTracks: [],
     timelineEntitiesInNotes: false,
+    timelineMigrationDeferred: false,
     enableAdvancedTimeline: false,
     autoDetectConflicts: true,
     analyticsEnabled: false,
@@ -7562,6 +7565,10 @@ export default class StorytellerSuitePlugin extends Plugin {
             return;
         }
         void import('./modals/TimelineMigrationModal').then(({ TimelineMigrationModal }) => {
+            const onDismiss = () => { void (async () => {
+                this.settings.timelineMigrationDeferred = true;
+                await this.saveSettings();
+            })(); };
             new TimelineMigrationModal(this.app, this, (storyId) => { void (async () => {
                 const counts = await this.timelineEntities.migrateFromSettings(storyId);
                 await this.backfillEventBranches();
@@ -7572,7 +7579,7 @@ export default class StorytellerSuitePlugin extends Plugin {
                     : `Moved ${total} eras, tracks and branches into notes.`, 8000);
                 this.refreshTimelineViews();
                 onDone?.();
-            })(); }).open();
+            })(); }, onDismiss).open();
         });
     }
 
@@ -7619,14 +7626,11 @@ export default class StorytellerSuitePlugin extends Plugin {
         if (!this.hasUnmigratedTimelineEntities()) return;
         const stories = this.settings.stories || [];
         if (!canMigrateWithoutAsking(stories.length)) {
-            // Nothing moves on its own here, and silence would read as "there is
-            // nothing to do". Say where the choice lives instead.
-            if (stories.length) {
-                new Notice(
-                    'Storyteller Suite: your timeline eras, tracks and branches are still stored in plugin settings. ' +
-                    'Settings > Timeline has a button to move them into notes.',
-                    12000
-                );
+            // More than one story means the migration needs an answer only the
+            // user has. Ask for it, once, in front of them. Burying it in
+            // settings would leave the data sitting there unnoticed forever.
+            if (stories.length && !this.settings.timelineMigrationDeferred) {
+                this.app.workspace.onLayoutReady(() => this.openTimelineEntityMigration());
             }
             return;
         }

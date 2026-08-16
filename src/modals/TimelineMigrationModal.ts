@@ -12,12 +12,20 @@ import StorytellerSuitePlugin from '../main';
 export class TimelineMigrationModal extends Modal {
     private plugin: StorytellerSuitePlugin;
     private onConfirm: (storyId: string) => void;
+    private onDismiss?: () => void;
     private selectedStoryId: string;
+    private confirmed = false;
 
-    constructor(app: App, plugin: StorytellerSuitePlugin, onConfirm: (storyId: string) => void) {
+    constructor(
+        app: App,
+        plugin: StorytellerSuitePlugin,
+        onConfirm: (storyId: string) => void,
+        onDismiss?: () => void
+    ) {
         super(app);
         this.plugin = plugin;
         this.onConfirm = onConfirm;
+        this.onDismiss = onDismiss;
         this.selectedStoryId = plugin.settings.activeStoryId || plugin.settings.stories[0]?.id || '';
     }
 
@@ -59,15 +67,17 @@ export class TimelineMigrationModal extends Modal {
 
         contentEl.createEl('p', {
             cls: 'setting-item-description',
-            text: 'The old data is kept as a backup, and "undo timeline notes migration" puts it back.'
+            text: 'Your timeline looks the same afterwards. The old data is kept as a backup, and Settings > Timeline ' +
+                'has both the undo and this button again if you would rather decide later.'
         });
 
         new Setting(contentEl)
-            .addButton(button => button.setButtonText('Cancel').onClick(() => this.close()))
+            .addButton(button => button.setButtonText('Not now').onClick(() => this.close()))
             .addButton(button => button
                 .setButtonText('Move into notes')
                 .setCta()
                 .onClick(() => {
+                    this.confirmed = true;
                     this.close();
                     this.onConfirm(this.selectedStoryId);
                 }));
@@ -75,5 +85,8 @@ export class TimelineMigrationModal extends Modal {
 
     onClose(): void {
         this.contentEl.empty();
+        // Dismissing counts however the modal was closed, Escape included:
+        // asking again on every single load is nagging, not informing.
+        if (!this.confirmed) this.onDismiss?.();
     }
 }

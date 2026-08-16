@@ -1209,7 +1209,7 @@ export class StorytellerSuiteSettingTab extends PluginSettingTab {
         if (migrated) {
             const setting = new Setting(container)
                 .setName('Eras, tracks and branches are notes')
-                .setDesc('They live in your story folders alongside characters and locations, so they are shared, versioned and searchable like every other entity.');
+                .setDesc('They live in your story folders alongside characters and locations.');
             if (plugin.settings.timelineEntityBackup) {
                 setting.addButton(button => button
                     .setButtonText('Undo migration')
@@ -1225,9 +1225,7 @@ export class StorytellerSuiteSettingTab extends PluginSettingTab {
 
         const hasStory = plugin.settings.stories.length > 0;
         const desc =
-            `${parts.join(', ')} waiting to move. Stored this way they are invisible to search and to Graph view, ` +
-            'and they do not travel when you share a story. Moving them turns each one into a note in its story folder. ' +
-            'Your timeline looks the same afterwards, and a backup is written first so the move can be undone.' +
+            `${parts.join(', ')} waiting to move into your story folders.` +
             (hasStory ? '' : ' Create a story first: notes need a story folder to live in.');
 
         const setting = new Setting(container)
