@@ -120,6 +120,19 @@ const CHIP_GAP = 8;
 const CHRONOLOGY_CHIP_TOP = 34;
 /** A wheel notch in line mode is worth roughly this many pixels. */
 const WHEEL_LINE_HEIGHT = 16;
+/**
+ * A trackpad pinch arrives as ctrl+wheel with deltas an order of magnitude
+ * smaller than a scroll's, so it needs its own gain to move the view at all.
+ */
+const PINCH_WHEEL_GAIN = 7;
+/**
+ * Ceiling on one pinch event's zoom, in the pixel units zoomAt reads.
+ *
+ * The same ctrl+wheel gesture is also how a mouse wheel zooms, and a mouse
+ * sends a whole 100-pixel notch where the trackpad sends single digits. Without
+ * a cap the gain tuned for the trackpad would make one notch jump nearly 3x.
+ */
+const PINCH_MAX_PIXELS = 60;
 /** Milestone gold, overridable through --sts-timeline-milestone. */
 const MILESTONE_GOLD = '#d9a520';
 /** Radius of an empty date slot on the lane baseline. */
@@ -1838,6 +1851,13 @@ export class NativeTimelineRenderer {
         this.viewEnd = this.viewStart + span;
     }
 
+    /** Where along the time axis the pointer sits, in plot pixels. */
+    private wheelPointer(event: WheelEvent, vertical: boolean): number {
+        return vertical
+            ? Math.max(0, event.offsetY - 28)
+            : Math.max(0, event.offsetX - SIDEBAR_WIDTH);
+    }
+
     /**
      * Wheel zooms at the cursor, shift+wheel pans along time.
      *
@@ -1854,6 +1874,16 @@ export class NativeTimelineRenderer {
             : Math.max(1, this.root.clientWidth - SIDEBAR_WIDTH);
         const deltaY = this.wheelPixels(event.deltaY, event.deltaMode, plotSize);
         const deltaX = this.wheelPixels(event.deltaX, event.deltaMode, plotSize);
+
+        // A trackpad pinch is delivered as a wheel event with ctrl held, not as
+        // two pointers, so the pointer-based pinch never sees it. Same path
+        // serves ctrl+wheel on a mouse, which means the same thing.
+        if (event.ctrlKey) {
+            const pixels = Math.max(-PINCH_MAX_PIXELS, Math.min(PINCH_MAX_PIXELS, deltaY * PINCH_WHEEL_GAIN));
+            this.zoomAt(pixels, this.wheelPointer(event, vertical), plotSize);
+            this.scheduleDraw();
+            return;
+        }
 
         const overSidebar = !vertical && event.offsetX < SIDEBAR_WIDTH;
         const canScrollLanes = this.maxLaneScroll() > 0;
@@ -1874,10 +1904,7 @@ export class NativeTimelineRenderer {
         // apps but wrong here: this lives in a scrollable note pane, where a
         // bare wheel is expected to move the content, not rescale it.
         if (event.shiftKey) {
-            const pointer = vertical
-                ? Math.max(0, event.offsetY - 28)
-                : Math.max(0, event.offsetX - SIDEBAR_WIDTH);
-            this.zoomAt(deltaY, pointer, plotSize);
+            this.zoomAt(deltaY, this.wheelPointer(event, vertical), plotSize);
         } else if (canScrollLanes) {
             this.scrollTop = Math.max(0, Math.min(this.maxLaneScroll(), this.scrollTop + deltaY));
         } else {
