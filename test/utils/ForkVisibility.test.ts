@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { isEventInFork, isEventOnMain, ForkLike } from '../../src/utils/ForkVisibility';
+import { isEventInFork, isEventOnMain, orderForksByParent, ForkLike } from '../../src/utils/ForkVisibility';
 
 const DAY = 24 * 60 * 60 * 1000;
 const DIVERGENCE = 100 * DAY;
@@ -57,5 +57,44 @@ describe('isEventInFork', () => {
     it('inherits everything when the fork has no events of its own yet', () => {
         const fresh: ForkLike = { id: 'f3' };
         expect(isEventInFork('The coronation', DIVERGENCE - DAY, fresh, DIVERGENCE, [fresh])).toBe(true);
+    });
+});
+
+describe('orderForksByParent', () => {
+    const ids = (forks: Array<{ id: string }>) => forks.map(fork => fork.id);
+
+    it('places a branch after the branch it left', () => {
+        const ordered = orderForksByParent([
+            { id: 'grandchild', parentTimelineId: 'child' },
+            { id: 'child', parentTimelineId: 'trunk-branch' },
+            { id: 'trunk-branch' }
+        ]);
+
+        expect(ids(ordered)).toEqual(['trunk-branch', 'child', 'grandchild']);
+    });
+
+    it('keeps siblings in the order they were made', () => {
+        const ordered = orderForksByParent([
+            { id: 'first', parentTimelineId: 'trunk-branch' },
+            { id: 'trunk-branch' },
+            { id: 'second', parentTimelineId: 'trunk-branch' }
+        ]);
+
+        expect(ids(ordered)).toEqual(['trunk-branch', 'first', 'second']);
+    });
+
+    it('keeps a branch whose parent was deleted', () => {
+        const ordered = orderForksByParent([{ id: 'orphan', parentTimelineId: 'gone' }]);
+
+        expect(ids(ordered)).toEqual(['orphan']);
+    });
+
+    it('keeps branches whose parent links form a loop', () => {
+        const ordered = orderForksByParent([
+            { id: 'a', parentTimelineId: 'b' },
+            { id: 'b', parentTimelineId: 'a' }
+        ]);
+
+        expect(ids(ordered).sort()).toEqual(['a', 'b']);
     });
 });

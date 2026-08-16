@@ -10,6 +10,50 @@ export interface ForkLike {
     linkedEvents?: string[];
 }
 
+/** The parts of a TimelineFork that decide lane order. */
+export interface ForkParentLike {
+    id: string;
+    parentTimelineId?: string;
+}
+
+/**
+ * Forks sorted so a branch is always listed after the branch it left.
+ *
+ * Compare mode stacks lanes in this order and draws each branch curving away
+ * from its parent. A branch placed above its own parent has to reach backwards
+ * up the screen, which reads as the parent having come from the child.
+ *
+ * A parent that is not in the list, or a chain that loops, still gets its
+ * branch placed: the entry is a branch somebody made, and dropping it over a
+ * bad link would hide their work rather than report it.
+ */
+export function orderForksByParent<T extends ForkParentLike>(forks: T[]): T[] {
+    const known = new Set(forks.map(fork => fork.id));
+    const children = new Map<string, T[]>();
+    forks.forEach(fork => {
+        const parent = fork.parentTimelineId && known.has(fork.parentTimelineId) ? fork.parentTimelineId : ROOT;
+        const siblings = children.get(parent) || [];
+        siblings.push(fork);
+        children.set(parent, siblings);
+    });
+    const ordered: T[] = [];
+    const placed = new Set<string>();
+    const visit = (parent: string): void => {
+        (children.get(parent) || []).forEach(fork => {
+            if (placed.has(fork.id)) return;
+            placed.add(fork.id);
+            ordered.push(fork);
+            visit(fork.id);
+        });
+    };
+    visit(ROOT);
+    forks.forEach(fork => { if (!placed.has(fork.id)) ordered.push(fork); });
+    return ordered;
+}
+
+/** Stands in for the trunk, which is not itself a fork. */
+const ROOT = '__main__';
+
 /** An event is on the main timeline when no fork has claimed it. */
 export function isEventOnMain(eventKey: string, forks: ForkLike[]): boolean {
     return !forks.some(fork => fork.linkedEvents?.includes(eventKey));

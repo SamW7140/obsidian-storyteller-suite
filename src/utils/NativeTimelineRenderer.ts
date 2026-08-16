@@ -12,7 +12,7 @@ import { daysInYear, fromAbsolute, monthsInYear, normalYearLength, toAbsolute } 
 import type { CalendarSystem } from '../calendar/types';
 import { chooseSnapResolution, generateTicks, snapDay, snapSlots, stepDay } from '../calendar/TimelineAxis';
 import type { AxisView, SnapResolution } from '../calendar/TimelineAxis';
-import { isEventInFork, isEventOnMain } from './ForkVisibility';
+import { isEventInFork, isEventOnMain, orderForksByParent } from './ForkVisibility';
 
 export interface TimelineRendererOptions {
     ganttMode?: boolean;
@@ -95,6 +95,17 @@ interface Lane {
     top: number;
     height: number;
     branchDepth?: number;
+    /** Set on a branch lane in compare mode. */
+    forkId?: string;
+    /**
+     * Lane this branch left, by id rather than by position.
+     *
+     * The fork drawing used to pair forks[index] with lanes[index + 1], so a
+     * branch of a branch drew its curve up to whichever lane happened to sit
+     * above it. Naming the parent means the curve lands on the timeline the
+     * branch actually left, wherever that ends up on screen.
+     */
+    parentLaneId?: string;
 }
 
 /**
@@ -509,8 +520,9 @@ export class NativeTimelineRenderer {
             const parent = byId.get(fork.parentTimelineId);
             return parent ? 1 + depthOf(parent, seen) : 1;
         };
-        forks.forEach((fork, laneIndex) => {
-            const lane: Lane = { id: `fork:${fork.id}`, label: fork.name, color: fork.color || this.palette[laneIndex % this.palette.length], explicitColor: !!fork.color, items: [], top: 0, height: 0, branchDepth: depthOf(fork) };
+        orderForksByParent(forks).forEach((fork, laneIndex) => {
+            const parentLaneId = fork.parentTimelineId && byId.has(fork.parentTimelineId) ? `fork:${fork.parentTimelineId}` : '__main__';
+            const lane: Lane = { id: `fork:${fork.id}`, label: fork.name, color: fork.color || this.palette[laneIndex % this.palette.length], explicitColor: !!fork.color, items: [], top: 0, height: 0, branchDepth: depthOf(fork), forkId: fork.id, parentLaneId };
             const divergence = this.parseDate(fork.divergenceDate);
             // Same rule as the single-branch view: the trunk up to the
             // divergence is inherited, and an unreadable divergence date keeps
@@ -1708,17 +1720,95 @@ export class NativeTimelineRenderer {
         ctx.restore();
     }
 
+    /**
+     * The moment a branch left its parent.
+     *
+     * The named divergence event beats the recorded date. If somebody moved
+     * that event, the branch should leave from where it sits now rather than
+     * from a date written down when the branch was first made.
+     */
+    private divergenceTime(fork: TimelineFork, parent: Lane): number {
+        const ref = fork.divergenceEvent;
+        const match = ref
+            ? parent.items.find(item => this.eventKey(item.event) === ref || item.event.name === ref)
+            : undefined;
+        if (match && Number.isFinite(match.start)) return match.start;
+        return this.parseDate(fork.divergenceDate || '');
+    }
+
+    /** Vertical centre of a lane's spine, in screen pixels. */
+    private laneSpineY(lane: Lane): number { return lane.top - this.scrollTop + 16; }
+
+    /**
+     * Draw each branch actually branching: a curve away from its parent at the
+     * divergence, a spine along the events it owns, and a curve back for one
+     * that was merged.
+     *
+     * The alternative, and what this used to be, is a stub of fixed length that
+     * says a branch exists without saying when it left, how long it ran, or
+     * whether it ever came back.
+     */
     private drawForkBranches(ctx: CanvasRenderingContext2D, width: number, height: number): void {
         if (this.filters.forkId !== '__compare__' || this.lanes.length < 2) return;
-        const forks = this.plugin.getTimelineForks();
+        const byId = new Map(this.lanes.map(lane => [lane.id, lane]));
         ctx.save();
         this.clipPlot(ctx, width, height);
-        forks.forEach((fork, index) => {
-            const lane = this.lanes[index + 1]; if (!lane) return;
-            const x = this.timeToX(this.parseDate(fork.divergenceDate), width);
-            const mainY = this.lanes[0].top - this.scrollTop + 16;
-            const branchY = lane.top - this.scrollTop + 16;
-            ctx.save(); ctx.strokeStyle = lane.color; ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(x, mainY); ctx.bezierCurveTo(x + 28, mainY, x + 28, branchY, x + 56, branchY); ctx.stroke(); ctx.restore();
+        this.lanes.forEach(lane => {
+            if (!lane.forkId) return;
+            const parent = byId.get(lane.parentLaneId || '__main__');
+            const fork = this.plugin.getTimelineFork(lane.forkId);
+            if (!parent || !fork) return;
+            const start = this.divergenceTime(fork, parent);
+            if (!Number.isFinite(start)) return;
+
+            const x = this.timeToX(start, width);
+            const parentY = this.laneSpineY(parent);
+            const branchY = this.laneSpineY(lane);
+            // Only what the branch itself changed. Trunk events are inherited by
+            // every branch, so measuring the spine against them would make each
+            // branch look as long as the whole story.
+            const own = lane.items.filter(item => !item.inherited);
+            const lastOwn = own.length ? Math.max(...own.map(item => item.end)) : start;
+            const spineEnd = this.timeToX(lastOwn, width);
+            const elbow = x + 30;
+
+            ctx.save();
+            ctx.strokeStyle = lane.color;
+            ctx.lineWidth = 3;
+            ctx.lineCap = 'round';
+            // An abandoned branch is history somebody decided against, so it
+            // draws faintly; one still being explored draws dashed, because it
+            // is not settled yet.
+            if (fork.status === 'abandoned') ctx.globalAlpha = 0.4;
+            if (fork.status === 'exploring' || fork.status === 'abandoned') ctx.setLineDash([7, 5]);
+
+            ctx.beginPath();
+            ctx.moveTo(x, parentY);
+            ctx.bezierCurveTo(x + 16, parentY, elbow - 16, branchY, elbow, branchY);
+            if (spineEnd > elbow) ctx.lineTo(spineEnd, branchY);
+            ctx.stroke();
+
+            if (fork.status === 'merged') {
+                // A merge rejoins the parent, so the line has somewhere to end.
+                // Without this a canon branch and an abandoned one both just
+                // stop, and the timeline never says which one won.
+                const rejoin = Math.max(spineEnd, elbow);
+                ctx.setLineDash([]);
+                ctx.beginPath();
+                ctx.moveTo(rejoin, branchY);
+                ctx.bezierCurveTo(rejoin + 16, branchY, rejoin + 14, parentY, rejoin + 30, parentY);
+                ctx.stroke();
+            }
+
+            // A filled node on the parent marks the departure point, which is
+            // the one place the two timelines are the same story.
+            ctx.setLineDash([]);
+            ctx.globalAlpha = 1;
+            ctx.fillStyle = lane.color;
+            ctx.beginPath();
+            ctx.arc(x, parentY, 4, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.restore();
         });
         ctx.restore();
     }
