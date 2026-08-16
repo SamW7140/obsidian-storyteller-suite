@@ -896,6 +896,15 @@ export interface Event {
      * an event carries its own branch wherever it goes.
      */
     branches?: string[];
+
+    /**
+     * Events this one caused, and events that caused it. Stored as readable
+     * links ("direct/strong: [[Event]] - why") and mirrored on the other event,
+     * so cause and effect are visible from both notes instead of from a third
+     * list that named them both.
+     */
+    causes?: string[];
+    causedBy?: string[];
 }
 
 /**

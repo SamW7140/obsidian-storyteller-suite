@@ -158,7 +158,7 @@ const FRONTMATTER_WHITELISTS: Record<EntityType, Set<string>> = {
     'id', 'entityType', 'name', 'dateTime', 'characters', 'location', 'items', 'cultures', 'magicSystems', 'status',
     'groups', 'profileImagePath', 'images', 'customFields', 'connections', 'color',
     'isMilestone', 'dependencies', 'progress', 'tags', 'narrativeMarkers', 'narrativeSequence',
-    'linkedChapters', 'linkedScenes', 'compendiumEntries', 'branches',
+    'linkedChapters', 'linkedScenes', 'compendiumEntries', 'branches', 'causes', 'causedBy',
     'mapCoordinates', 'mapId', 'markerId', 'relatedMapIds', 'mapIcon', 'mapColor'
   ]),
   item: new Set([

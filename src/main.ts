@@ -34,6 +34,7 @@ import { stringifyYamlWithLogging, validateFrontmatterPreservation } from './uti
 import { stripWikiLink } from './utils/WikiLinks';
 import { StoryScoped, scopeToStory, stampStory, mergeStoryScoped, backfillStoryIds } from './utils/StoryScope';
 import { TimelineEntityStore } from './services/TimelineEntityStore';
+import { serializeCausalityRef, parseCausalityRefs, causalityRefTarget } from './utils/CausalityRefs';
 import { canMigrateWithoutAsking } from './utils/TimelineMigrationPlan';
 import { setLocale, t } from './i18n/strings';
 import { FolderResolver, FolderResolverOptions, EntityFolderType, StoryFolderOverrides } from './folders/FolderResolver';
@@ -3227,6 +3228,7 @@ export default class StorytellerSuitePlugin extends Plugin {
 					new TimelineMigrationModal(this.app, this, (storyId) => { void (async () => {
 						const counts = await this.timelineEntities.migrateFromSettings(storyId);
 						await this.backfillEventBranches();
+						await this.migrateCausalityLinksToEvents();
 						const total = counts.eras + counts.tracks + counts.branches;
 						new Notice(counts.skipped
 							? `Moved ${total} into notes. ${counts.skipped} could not be filed and stay in the backup.`
@@ -7597,6 +7599,7 @@ export default class StorytellerSuitePlugin extends Plugin {
         if (!canMigrateWithoutAsking(stories.length)) return;
         const counts = await this.timelineEntities.migrateFromSettings(stories[0].id);
         await this.backfillEventBranches();
+        await this.migrateCausalityLinksToEvents();
         const total = counts.eras + counts.tracks + counts.branches;
         if (total > 0) {
             new Notice(`Storyteller Suite: moved ${total} timeline eras, tracks and branches into notes.`, 8000);
@@ -7987,90 +7990,180 @@ export default class StorytellerSuitePlugin extends Plugin {
     // ============================================================
 
     /**
-     * Create a causality link between two events
-     * @param causeEvent - ID or name of the cause event
-     * @param effectEvent - ID or name of the effect event
-     * @param linkType - Type of causality (direct, indirect, conditional, catalyst)
-     * @param description - Description of the causal relationship
-     * @param strength - Strength of the link (weak, moderate, strong, absolute)
-     * @returns The created CausalityLink object
+     * Cause and effect between two events.
+     *
+     * These used to be rows in a third list naming both events, invisible from
+     * either event's note. They live on the events now, as `causes` on the
+     * cause and `causedBy` on the effect, kept in step by EntitySyncService.
+     *
+     * The CausalityLink shape survives as the currency the UI speaks; it is
+     * derived from the events rather than stored. Its id is the pair of event
+     * names, so the same link always has the same id no matter which end it
+     * was read from.
      */
-    createCausalityLink(
+    private causalityLinkId(causeEvent: string, effectEvent: string): string {
+        return `${causeEvent}=>${effectEvent}`;
+    }
+
+    private causalityLinksFromEvent(event: Event): CausalityLink[] {
+        const key = event.name;
+        const out: CausalityLink[] = [];
+        for (const ref of parseCausalityRefs(event.causes)) {
+            out.push({
+                id: this.causalityLinkId(key, ref.target),
+                causeEvent: key,
+                effectEvent: ref.target,
+                linkType: ref.linkType,
+                ...(ref.strength ? { strength: ref.strength } : {}),
+                ...(ref.description ? { description: ref.description } : {})
+            });
+        }
+        return out;
+    }
+
+    /**
+     * Record that one event caused another.
+     *
+     * Only the cause is written. The reverse side is the sync service's job,
+     * and writing both here would fight it.
+     */
+    async createCausalityLink(
         causeEvent: string,
         effectEvent: string,
         linkType: 'direct' | 'indirect' | 'conditional' | 'catalyst',
         description: string,
         strength?: 'weak' | 'moderate' | 'strong' | 'absolute'
-    ): CausalityLink {
-        const link: CausalityLink = {
-            id: `${causeEvent}-${effectEvent}-${Date.now()}`,
-            causeEvent,
-            effectEvent,
+    ): Promise<CausalityLink | null> {
+        const events = await this.listEvents();
+        const cause = events.find(event => event.id === causeEvent || event.name === causeEvent);
+        const effect = events.find(event => event.id === effectEvent || event.name === effectEvent);
+        if (!cause || !effect) {
+            new Notice('Error: both events must exist before they can be linked');
+            return null;
+        }
+
+        const ref = serializeCausalityRef({
+            target: effect.name,
+            linkType,
+            ...(strength ? { strength } : { strength: 'strong' as const }),
+            ...(description ? { description } : {})
+        });
+        const existing = cause.causes || [];
+        cause.causes = [...existing.filter(entry => causalityRefTarget(entry) !== effect.name), ref];
+        await this.saveEvent(cause);
+
+        new Notice(`Causality link created: ${cause.name} to ${effect.name}`);
+        return {
+            id: this.causalityLinkId(cause.name, effect.name),
+            causeEvent: cause.name,
+            effectEvent: effect.name,
             linkType,
             strength: strength || 'strong',
             description
         };
-
-        this.settings.causalityLinks = this.settings.causalityLinks || [];
-        this.settings.causalityLinks.push(this.stampTimelineEntry(link));
-        void this.saveSettings();
-
-        new Notice(`Causality link created: ${causeEvent} → ${effectEvent}`);
-        return link;
     }
 
-    /**
-     * Get all causality links
-     * @returns Array of all causality links
-     */
-    getCausalityLinks(): CausalityLink[] {
-        return this.scopeTimelineList(this.settings.causalityLinks);
+    /** Every causal link in the active story, read off the events. */
+    async getCausalityLinks(): Promise<CausalityLink[]> {
+        const events = await this.listEvents();
+        return events.flatMap(event => this.causalityLinksFromEvent(event));
     }
 
-    /**
-     * Get causality links for a specific event
-     * @param eventId - ID or name of the event
-     * @returns Object containing causes and effects for the event
-     */
-    getCausalityLinksForEvent(eventId: string): { causes: CausalityLink[], effects: CausalityLink[] } {
-        const links = this.scopeTimelineList(this.settings.causalityLinks);
-
+    /** What caused this event, and what it caused in turn. */
+    async getCausalityLinksForEvent(eventId: string): Promise<{ causes: CausalityLink[], effects: CausalityLink[] }> {
+        const links = await this.getCausalityLinks();
+        const events = await this.listEvents();
+        const event = events.find(candidate => candidate.id === eventId || candidate.name === eventId);
+        const key = event?.name || eventId;
         return {
-            causes: links.filter(l => l.effectEvent === eventId),
-            effects: links.filter(l => l.causeEvent === eventId)
+            causes: links.filter(link => link.effectEvent === key),
+            effects: links.filter(link => link.causeEvent === key)
         };
     }
 
-    /**
-     * Update a causality link
-     * @param link - Updated link object
-     */
+    /** Rewrite a link in place, keyed on the pair of events it joins. */
     async updateCausalityLink(link: CausalityLink): Promise<void> {
-        const index = this.settings.causalityLinks?.findIndex(l => l.id === link.id);
-        if (index !== undefined && index >= 0) {
-            this.settings.causalityLinks![index] = this.stampTimelineEntry(link);
-            await this.saveSettings();
-            new Notice(`Causality link updated`);
-        } else {
-            new Notice(`Error: Causality link not found`);
+        const events = await this.listEvents();
+        const cause = events.find(event => event.name === link.causeEvent || event.id === link.causeEvent);
+        if (!cause) {
+            new Notice('Error: causality link not found');
+            return;
         }
+        const ref = serializeCausalityRef({
+            target: link.effectEvent,
+            linkType: link.linkType,
+            ...(link.strength ? { strength: link.strength } : {}),
+            ...(link.description ? { description: link.description } : {})
+        });
+        cause.causes = [
+            ...(cause.causes || []).filter(entry => causalityRefTarget(entry) !== link.effectEvent),
+            ref
+        ];
+        await this.saveEvent(cause);
+        new Notice('Causality link updated');
+    }
+
+    /** Drop a link from the cause; sync removes it from the effect. */
+    async deleteCausalityLink(linkId: string): Promise<void> {
+        const links = await this.getCausalityLinks();
+        const link = links.find(candidate => candidate.id === linkId);
+        if (!link) {
+            new Notice('Error: causality link not found');
+            return;
+        }
+        const events = await this.listEvents();
+        const cause = events.find(event => event.name === link.causeEvent);
+        if (!cause) {
+            new Notice('Error: causality link not found');
+            return;
+        }
+        cause.causes = (cause.causes || []).filter(entry => causalityRefTarget(entry) !== link.effectEvent);
+        await this.saveEvent(cause);
+        new Notice('Causality link deleted');
     }
 
     /**
-     * Delete a causality link
-     * @param linkId - ID of the link to delete
+     * Move the old causality rows onto the events, once.
+     *
+     * Rows naming an event that no longer exists are left in settings rather
+     * than dropped, so nothing disappears without the user seeing it.
+     *
+     * @returns how many rows became links
      */
-    async deleteCausalityLink(linkId: string): Promise<void> {
-        const linksBefore = this.settings.causalityLinks?.length || 0;
-        this.settings.causalityLinks = this.settings.causalityLinks?.filter(l => l.id !== linkId);
-        const linksAfter = this.settings.causalityLinks?.length || 0;
+    async migrateCausalityLinksToEvents(): Promise<number> {
+        const links = this.settings.causalityLinks || [];
+        if (!links.length) return 0;
 
-        if (linksBefore > linksAfter) {
-            await this.saveSettings();
-            new Notice(`Causality link deleted`);
-        } else {
-            new Notice(`Error: Causality link not found`);
+        const events = await this.listEvents();
+        const find = (key: string) => events.find(event => event.id === key || event.name === key);
+
+        const touched = new Set<Event>();
+        const unmigrated: CausalityLink[] = [];
+        for (const link of links) {
+            const cause = find(link.causeEvent);
+            const effect = find(link.effectEvent);
+            if (!cause || !effect) { unmigrated.push(link); continue; }
+            const ref = serializeCausalityRef({
+                target: effect.name,
+                linkType: link.linkType,
+                ...(link.strength ? { strength: link.strength } : {}),
+                ...(link.description ? { description: link.description } : {})
+            });
+            const existing = cause.causes || [];
+            if (existing.some(entry => causalityRefTarget(entry) === effect.name)) continue;
+            cause.causes = [...existing, ref];
+            touched.add(cause);
         }
+
+        for (const event of touched) {
+            // Sync runs here on purpose: it writes the causedBy side onto the
+            // other event, which is the half the old rows never had.
+            await this.saveEvent(event);
+        }
+
+        this.settings.causalityLinks = unmigrated;
+        await this.saveSettings();
+        return touched.size;
     }
 
 

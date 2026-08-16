@@ -16,6 +16,7 @@
  */
 
 import type StorytellerSuitePlugin from '../main';
+import { causalityRefTarget, invertCausalityRef } from '../utils/CausalityRefs';
 import type { Character, Location, Event, PlotItem, Scene, EntityRef, Culture, Economy, MagicSystem, TypedRelationship, Chapter, CompendiumEntry, TimelineFork } from '../types';
 
 type EntityType = 'character' | 'location' | 'event' | 'item' | 'scene' | 'culture' | 'economy' | 'magicsystem' | 'chapter' | 'compendiumentry' | 'timelinebranch';
@@ -53,6 +54,15 @@ interface RelationshipMapping {
     transform?: RelationshipTransform;
     /** Reverse transform for bidirectional relationships */
     reverseTransform?: RelationshipTransform;
+    /**
+     * Pull the target entity's name out of a composite stored value.
+     *
+     * Most fields store a bare name, so the value is the lookup key. Fields
+     * that carry the relationship's own detail alongside the name (causality,
+     * for one) need telling which part is the name, or every lookup misses and
+     * the reverse side silently never gets written.
+     */
+    resolveTargetKey?: (value: unknown) => string;
 }
 
 /**
@@ -483,6 +493,32 @@ export class EntitySyncService {
             isArray: true,
             transform: (itemId: string, chapter: SyncEntity) => chapter.name,
             reverseTransform: (chapId: string, item: SyncEntity) => item.name
+        },
+        // Event ↔ Event (causes[] ↔ causedBy[])
+        // A causal link is a relationship between two events, so it lives on
+        // the events. Type, strength and description belong to the link itself
+        // and survive being read from either end.
+        {
+            sourceType: 'event',
+            sourceField: 'causes',
+            targetType: 'event',
+            targetField: 'causedBy',
+            bidirectional: true,
+            isArray: true,
+            resolveTargetKey: causalityRefTarget,
+            transform: (value: unknown, event: SyncEntity) => invertCausalityRef(value, event.name),
+            reverseTransform: (value: unknown, event: SyncEntity) => invertCausalityRef(value, event.name)
+        },
+        {
+            sourceType: 'event',
+            sourceField: 'causedBy',
+            targetType: 'event',
+            targetField: 'causes',
+            bidirectional: true,
+            isArray: true,
+            resolveTargetKey: causalityRefTarget,
+            transform: (value: unknown, event: SyncEntity) => invertCausalityRef(value, event.name),
+            reverseTransform: (value: unknown, event: SyncEntity) => invertCausalityRef(value, event.name)
         },
         // Event ↔ Branch (branches[] ↔ linkedEvents[])
         // Branch membership used to live only inside the branch, so an event
@@ -1130,7 +1166,9 @@ export class EntitySyncService {
         try {
             // Extract target ID from TypedRelationship if needed
             let targetId = oldValue;
-            if (mapping.sourceField === 'relationships' && mapping.sourceType === 'character' && oldValue && typeof oldValue === 'object' && 'target' in oldValue) {
+            if (mapping.resolveTargetKey) {
+                targetId = mapping.resolveTargetKey(oldValue);
+            } else if (mapping.sourceField === 'relationships' && mapping.sourceType === 'character' && oldValue && typeof oldValue === 'object' && 'target' in oldValue) {
                 targetId = (oldValue as SyncEntityExtended).target;
             }
             
@@ -1334,7 +1372,9 @@ export class EntitySyncService {
         try {
             // Extract target ID from TypedRelationship if needed
             let targetId = newValue;
-            if (mapping.sourceField === 'relationships' && mapping.sourceType === 'character' && newValue && typeof newValue === 'object' && 'target' in newValue) {
+            if (mapping.resolveTargetKey) {
+                targetId = mapping.resolveTargetKey(newValue);
+            } else if (mapping.sourceField === 'relationships' && mapping.sourceType === 'character' && newValue && typeof newValue === 'object' && 'target' in newValue) {
                 targetId = (newValue as SyncEntityExtended).target;
             }
             
@@ -1393,8 +1433,14 @@ export class EntitySyncService {
                     // Special handling for character relationships which can contain TypedRelationship objects
                     const isRelationshipsField = mapping.targetField === 'relationships' && mapping.targetType === 'character';
                     
-                    // Check if already exists (case-insensitive for strings, or check TypedRelationship.target)
-                    const exists = typeof valueToAdd === 'string'
+                    // Two links to the same event differing only in wording are
+                    // the same link, so compare on the target rather than the
+                    // whole string.
+                    const keyed = mapping.resolveTargetKey;
+                    const exists = keyed && typeof valueToAdd === 'string'
+                        ? array.some((item: unknown) =>
+                            keyed(item).toLowerCase().trim() === keyed(valueToAdd).toLowerCase().trim())
+                        : typeof valueToAdd === 'string'
                         ? array.some((item: unknown) => {
                             if (typeof item === 'string') {
                                 return item.toLowerCase().trim() === valueToAdd.toLowerCase().trim();
