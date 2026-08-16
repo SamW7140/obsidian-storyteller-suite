@@ -1332,6 +1332,12 @@ export default class StorytellerSuitePlugin extends Plugin {
 			// cache belongs to the story that was active when it was filled.
 			this.timelineEntities.invalidate();
 			await this.timelineEntities.refresh();
+			// An open timeline is still showing the story that was active a
+			// moment ago, and nothing on screen says so. Closing and reopening
+			// the view was the only way to catch up.
+			this.app.workspace.getLeavesOfType(VIEW_TYPE_TIMELINE).forEach(leaf => {
+				if (leaf.view instanceof TimelineView) void leaf.view.reloadForStory();
+			});
 		} else {
 			throw new Error('Story not found');
 		}

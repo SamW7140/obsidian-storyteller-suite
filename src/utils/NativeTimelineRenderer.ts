@@ -7,7 +7,7 @@ import type { DetectedConflict } from './ConflictDetector';
 import { ConflictDetector } from './ConflictDetector';
 import { CalendarRegistry } from '../calendar/CalendarRegistry';
 import { GREGORIAN_CALENDAR } from '../calendar/builtins';
-import { parseToAbsoluteDay, formatAbsoluteDay } from '../calendar/CalendarDateText';
+import { parseToAbsoluteDay, formatAbsoluteDay, formatCalendarYear } from '../calendar/CalendarDateText';
 import { daysInYear, fromAbsolute, monthsInYear, normalYearLength, toAbsolute } from '../calendar/CalendarEngine';
 import type { CalendarSystem } from '../calendar/types';
 import { chooseSnapResolution, generateTicks, snapDay, snapSlots, stepDay } from '../calendar/TimelineAxis';
@@ -1105,17 +1105,10 @@ export class NativeTimelineRenderer {
             const item = lane.items[i];
             if (item.start > rightTime) break;
             if (item.end < leftTime) continue;
-            const x1 = this.timeToX(item.start, width);
-            const x2 = this.timeToX(item.end, width);
-            const y = top + 7 + item.row * rowHeight;
-            const itemHeight = rowHeight - 7;
-            const isPoint = Math.abs(x2 - x1) < 3;
-            const chipWidth = this.chipWidth(ctx, item, MIN_CHIP_WIDTH);
-            const itemWidth = isPoint ? chipWidth : Math.max(24, x2 - x1);
-            const x = isPoint ? x1 - 7 : x1;
-            item.rect = new DOMRect(x, y, itemWidth, itemHeight);
+            const bar = this.ganttBar(ctx, item, width);
+            item.rect = new DOMRect(bar.x, top + 7 + item.row * rowHeight, bar.width, rowHeight - 7);
             this.visibleItems.push(item);
-            this.drawItem(ctx, item, isPoint);
+            this.drawItem(ctx, item, bar.asChip, undefined, true, bar.span);
         }
         ctx.restore();
     }
@@ -1405,7 +1398,7 @@ export class NativeTimelineRenderer {
     }
 
     private calendarYearLabel(calendar: ReturnType<CalendarRegistry['getActiveCalendar']>, year: number): string {
-        return calendar.epochLabel ? `${year} ${calendar.epochLabel}` : String(year);
+        return formatCalendarYear(calendar, year);
     }
 
     /**
@@ -1413,7 +1406,7 @@ export class NativeTimelineRenderer {
      * mode, where the same event already has a marker on the axis and drawing a
      * second one gives every milestone two stars.
      */
-    private drawItem(ctx: CanvasRenderingContext2D, item: NativeItem, isPoint: boolean, labelOverride?: string, withMarker = true): void {
+    private drawItem(ctx: CanvasRenderingContext2D, item: NativeItem, isPoint: boolean, labelOverride?: string, withMarker = true, durationSpan = 0): void {
         const rect = item.rect!;
         ctx.save();
         ctx.globalAlpha = item.inherited ? 0.45 : this.certaintyAlpha(item.event);
@@ -1428,6 +1421,16 @@ export class NativeTimelineRenderer {
             if (item.approximate) ctx.setLineDash([3, 3]);
             ctx.stroke();
             ctx.setLineDash([]);
+            // How long the event actually ran, shaded inside the chip that had
+            // to be widened to hold its label.
+            if (durationSpan > 3) {
+                ctx.save();
+                ctx.globalAlpha = 0.3;
+                ctx.fillStyle = accent;
+                this.roundedRect(ctx, rect.x + 7, rect.y, Math.min(durationSpan, rect.width - 7), rect.height, 3);
+                ctx.fill();
+                ctx.restore();
+            }
             if (withMarker) {
                 ctx.fillStyle = this.markerColor(item);
                 const markerX = rect.x + 10;
@@ -1754,21 +1757,37 @@ export class NativeTimelineRenderer {
         if (item.rect) return item.rect;
         const rowHeight = this.rowHeight();
         const chronology = !this.options.ganttMode;
-        const x1 = this.timeToX(item.start, width);
-        const x2 = this.timeToX(item.end, width);
         const top = lane.top - this.scrollTop;
         if (chronology) {
             const chipWidth = this.ctx ? this.chipWidth(this.ctx, item, MIN_CHRONOLOGY_CHIP_WIDTH) : MAX_CHIP_WIDTH;
-            return new DOMRect(x1 + 9, top + CHRONOLOGY_CHIP_TOP + item.row * rowHeight, chipWidth, rowHeight - 7);
+            return new DOMRect(this.timeToX(item.start, width) + 9, top + CHRONOLOGY_CHIP_TOP + item.row * rowHeight, chipWidth, rowHeight - 7);
         }
-        const isPoint = Math.abs(x2 - x1) < 3;
-        const chipWidth = this.ctx ? this.chipWidth(this.ctx, item, MIN_CHIP_WIDTH) : MAX_CHIP_WIDTH;
-        return new DOMRect(
-            isPoint ? x1 - 7 : x1,
-            top + 7 + item.row * rowHeight,
-            isPoint ? chipWidth : Math.max(24, x2 - x1),
-            rowHeight - 7
-        );
+        const bar = this.ganttBar(this.ctx, item, width);
+        return new DOMRect(bar.x, top + 7 + item.row * rowHeight, bar.width, rowHeight - 7);
+    }
+
+    /**
+     * Where a Gantt bar sits, how wide it draws, and whether it is too short to
+     * carry its own label.
+     *
+     * An event with no explicit end gets `defaultGanttDuration`, one day by
+     * default, and the bar used to be drawn at whatever that came to in pixels
+     * with a 24px floor. At any zoom wider than a few weeks that is a stub with
+     * no room for text, so every non-milestone event turned into an unlabelled
+     * nub while milestones, which have no duration and so already drew as
+     * chips, stayed readable.
+     *
+     * Anything shorter than its own label now draws as a chip anchored at its
+     * start, with the true span shaded inside it so widening the bar to fit the
+     * text does not claim the event was instantaneous.
+     */
+    private ganttBar(ctx: CanvasRenderingContext2D | null, item: NativeItem, width: number): { x: number; width: number; span: number; asChip: boolean } {
+        const x1 = this.timeToX(item.start, width);
+        const x2 = this.timeToX(item.end, width);
+        const span = Math.max(0, x2 - x1);
+        const chipWidth = ctx ? this.chipWidth(ctx, item, MIN_CHIP_WIDTH) : MAX_CHIP_WIDTH;
+        const asChip = span < chipWidth;
+        return { x: asChip ? x1 - 7 : x1, width: asChip ? chipWidth : span, span, asChip };
     }
 
     /**

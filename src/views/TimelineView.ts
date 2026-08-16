@@ -974,6 +974,26 @@ export class TimelineView extends ItemView {
         this.updateSearchDropdown();
     }
 
+    /**
+     * Point the view at whichever story is active now.
+     *
+     * Filters name characters, locations, tracks and branches belonging to the
+     * story that was active when they were set. Carrying them across a switch
+     * would filter the new story by names it has never heard of, which shows up
+     * as an empty timeline and reads as the new story having no events.
+     */
+    async reloadForStory(): Promise<void> {
+        this.currentState.filters = {};
+        this.currentState.currentTrackId = undefined;
+        this.currentState.currentForkId = undefined;
+        this.buildToolbar();
+        await this.buildAdvancedFilters();
+        if (this.filterChipsEl) this.filterBuilder.renderFilterChips(this.filterChipsEl);
+        await this.buildTimeline();
+        this.updateFooterStatus();
+        this.updateSearchDropdown();
+    }
+
     /** Changes whenever a branch is added, renamed or removed. */
     private branchSignature(): string {
         return this.plugin.getTimelineForks().map(fork => `${fork.id}:${fork.name}`).join('|');

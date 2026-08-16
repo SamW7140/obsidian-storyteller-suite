@@ -4,6 +4,7 @@ import {
   formatInCalendar,
   parseToAbsoluteDay,
   formatAbsoluteDay,
+  formatCalendarYear,
 } from '../../src/calendar/CalendarDateText';
 import { GREGORIAN_CALENDAR } from '../../src/calendar/builtins';
 import type { CalendarSystem } from '../../src/calendar/types';
@@ -84,5 +85,30 @@ describe('CalendarDateText — Gregorian (minute base unit)', () => {
     expect(p.precision).toBe('time');
     expect(p.date).toEqual({ year: 2024, month: 2, day: 2, unitOfDay: 14 * 60 + 30 });
     expect(formatInCalendar(p.date, GREGORIAN_CALENDAR, 'time')).toBe('March 2, 2024 CE 14:30');
+  });
+});
+
+/**
+ * The epoch label only earns its place when the calendar is somebody's own.
+ * "March 15, 2024 CE" on the default calendar is the reader being told which
+ * era they live in.
+ */
+describe('formatCalendarYear', () => {
+  it('leaves an ordinary Gregorian year alone', () => {
+    expect(formatCalendarYear(GREGORIAN_CALENDAR, 2024)).toBe('2024');
+  });
+
+  it('reads a pre-epoch Gregorian year as BCE rather than a negative number', () => {
+    // Astronomical years: 0 is 1 BCE, -43 is 44 BCE.
+    expect(formatCalendarYear(GREGORIAN_CALENDAR, 0)).toBe('1 BCE');
+    expect(formatCalendarYear(GREGORIAN_CALENDAR, -43)).toBe('44 BCE');
+  });
+
+  it("keeps a custom calendar's own epoch label", () => {
+    expect(formatCalendarYear(FANTASY, 342)).toBe('342 AF');
+  });
+
+  it('gives a custom calendar with no label a bare year', () => {
+    expect(formatCalendarYear({ ...FANTASY, epochLabel: '' }, 342)).toBe('342');
   });
 });

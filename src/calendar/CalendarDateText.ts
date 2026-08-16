@@ -159,3 +159,26 @@ export function formatAbsoluteDay(
 ): string {
   return formatInCalendar(fromAbsolute(cal, { absoluteDay }), cal, precision);
 }
+
+/**
+ * A year as it should be labelled on an axis or an event card.
+ *
+ * The built-in Gregorian calendar carries `epochLabel: 'CE'` so that a date
+ * typed as "1420 CE" parses, but stamping that on every label turned an
+ * ordinary modern date into "March 15, 2024 CE". A reader knows what year they
+ * are in; the label only earns its place when the calendar is somebody's own
+ * and its epoch is not the reader's.
+ *
+ * Years here are astronomical, so year 0 is 1 BCE and year -43 is 44 BCE. A
+ * bare negative number in a date reads as a bug rather than as antiquity.
+ */
+export function formatCalendarYear(cal: CalendarSystem, year: number): string {
+  if (cal.id !== GREGORIAN_ID) return cal.epochLabel ? `${year} ${cal.epochLabel}` : String(year);
+  return year > 0 ? String(year) : `${1 - year} BCE`;
+}
+
+/**
+ * Named rather than imported from builtins, which would make this module and
+ * the calendar it describes depend on each other.
+ */
+const GREGORIAN_ID = 'builtin-gregorian';

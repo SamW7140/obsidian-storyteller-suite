@@ -10,6 +10,7 @@
  * {@link AxisTick}s whose labels are drawn from the active calendar.
  */
 import type { CalendarSystem } from './types';
+import { formatCalendarYear } from './CalendarDateText';
 import {
   toAbsolute,
   fromAbsolute,
@@ -272,7 +273,7 @@ export function snapSlots(cal: CalendarSystem, view: AxisView): number[] {
 }
 
 function yearLabel(cal: CalendarSystem, year: number): string {
-  return cal.epochLabel ? `${year} ${cal.epochLabel}` : String(year);
+  return formatCalendarYear(cal, year);
 }
 
 /**

@@ -52,7 +52,12 @@ describe('TimelineAxis — Gregorian tick generation', () => {
     }
   });
 
-  it('year labels carry the epoch label and align to Jan 1', () => {
+  /**
+   * The Gregorian calendar carries "CE" so a date typed as "1420 CE" parses,
+   * but a reader looking at an ordinary modern year does not need telling which
+   * era they are in, and the suffix on every tick was noise.
+   */
+  it('labels Gregorian years plainly and aligns them to Jan 1', () => {
     const view: AxisView = {
       startDay: dayOf(2000, 1, 1),
       endDay: dayOf(2010, 1, 1),
@@ -60,7 +65,7 @@ describe('TimelineAxis — Gregorian tick generation', () => {
     };
     const ticks = generateTicks(G, view);
     const t2005 = ticks.find((t) => t.label.startsWith('2005'));
-    expect(t2005?.label).toBe('2005 CE');
+    expect(t2005?.label).toBe('2005');
     expect(t2005?.absoluteDay).toBe(dayOf(2005, 1, 1));
   });
 
