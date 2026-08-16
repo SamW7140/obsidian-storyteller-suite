@@ -7570,6 +7570,9 @@ export default class StorytellerSuitePlugin extends Plugin {
                 await this.saveSettings();
             })(); };
             new TimelineMigrationModal(this.app, this, (storyId) => { void (async () => {
+                // Answering the prompt clears an earlier dismissal, so undoing
+                // this migration later can set the flag again meaningfully.
+                this.settings.timelineMigrationDeferred = false;
                 const counts = await this.timelineEntities.migrateFromSettings(storyId);
                 await this.backfillEventBranches();
                 await this.migrateCausalityLinksToEvents();
@@ -7590,6 +7593,10 @@ export default class StorytellerSuitePlugin extends Plugin {
             return;
         }
         await this.timelineEntities.rollbackMigration();
+        // Undoing is an answer, so stop offering to migrate. The command is
+        // still there for anyone who changes their mind.
+        this.settings.timelineMigrationDeferred = true;
+        await this.saveSettings();
         new Notice('Timeline eras, tracks and branches are read from settings again. The notes were left in place.', 8000);
         this.refreshTimelineViews();
         onDone?.();
@@ -7624,6 +7631,10 @@ export default class StorytellerSuitePlugin extends Plugin {
      */
     async migrateTimelineEntitiesIfUnambiguous(): Promise<void> {
         if (!this.hasUnmigratedTimelineEntities()) return;
+        // Someone who undid the migration, or closed the prompt, has answered.
+        // Without this a one-story vault migrates again on the next load and
+        // the undo never survives a restart.
+        if (this.settings.timelineMigrationDeferred) return;
         const stories = this.settings.stories || [];
         if (!canMigrateWithoutAsking(stories.length)) {
             // More than one story means the migration needs an answer only the

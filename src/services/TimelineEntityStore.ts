@@ -90,11 +90,21 @@ export class TimelineEntityStore {
         return this.plugin.settings.timelineEntitiesInNotes === true;
     }
 
-    getEras(): TimelineEra[] { return this.cache.era as TimelineEra[]; }
-    getTracks(): TimelineTrack[] { return this.cache.track as TimelineTrack[]; }
-    getBranches(): TimelineFork[] { return this.cache.branch as TimelineFork[]; }
+    /**
+     * Readers get their own array, never the cache's.
+     *
+     * Callers treat these lists as working copies: the era and track managers
+     * push a new row onto what they read and hand the whole list back. Handing
+     * out the cache made that push land in the cache first, so replaceAll then
+     * compared the new row against itself, found no change, and skipped writing
+     * the note. The row showed in the UI until the next reload and never
+     * existed on disk.
+     */
+    getEras(): TimelineEra[] { return [...this.cache.era] as TimelineEra[]; }
+    getTracks(): TimelineTrack[] { return [...this.cache.track] as TimelineTrack[]; }
+    getBranches(): TimelineFork[] { return [...this.cache.branch] as TimelineFork[]; }
 
-    get(kind: TimelineEntityKind): TimelineNoteEntity[] { return this.cache[kind]; }
+    get(kind: TimelineEntityKind): TimelineNoteEntity[] { return [...this.cache[kind]]; }
 
     /** Drop the cache so the next refresh re-reads from disk. Used on story switch. */
     invalidate(): void {
@@ -171,6 +181,8 @@ export class TimelineEntityStore {
             }
         }
 
+        finalPath = this.freePathFor(finalPath, entity.id);
+
         const existing = this.plugin.app.vault.getAbstractFileByPath(finalPath);
         let existingSections: Record<string, string> = {};
         if (existing instanceof TFile) {
@@ -208,6 +220,33 @@ export class TimelineEntityStore {
         this.plugin.app.metadataCache.trigger('dataview:refresh-views');
     }
 
+    /**
+     * A path this entity may write to without overwriting somebody else's note.
+     *
+     * Two stories can share one folder, either by pointing their overrides at
+     * the same place or by configuring a path with no story placeholder in it.
+     * Two eras named the same then resolve to one file, and the migration,
+     * which is the only thing that writes other stories' rows, would silently
+     * replace the first story's era with the second's.
+     */
+    private freePathFor(path: string, id: string): string {
+        const taken = (candidate: string): boolean => {
+            const file = this.plugin.app.vault.getAbstractFileByPath(candidate);
+            if (!(file instanceof TFile)) return false;
+            const existingId = this.plugin.app.metadataCache.getFileCache(file)?.frontmatter?.id as string | undefined;
+            // No id at all means a note someone wrote by hand, which the store
+            // adopts by filename. Claiming it is the intended behaviour.
+            return Boolean(existingId) && existingId !== id;
+        };
+        if (!taken(path)) return path;
+        const base = path.replace(/\.md$/, '');
+        for (let suffix = 2; suffix < 100; suffix++) {
+            const candidate = `${base} ${suffix}.md`;
+            if (!taken(candidate)) return candidate;
+        }
+        return `${base} ${id}.md`;
+    }
+
     /** Trash the note and drop it from the cache. */
     async delete(kind: TimelineEntityKind, id: string): Promise<boolean> {
         const entity = this.cache[kind].find(item => item.id === id);
@@ -235,7 +274,10 @@ export class TimelineEntityStore {
             // every note would churn the vault and fire a modify event per file
             // for no change at all.
             const current = this.cache[kind].find(item => item.id === entity.id);
-            if (current && stableJson(current) === stableJson({ ...entity, filePath: current.filePath })) continue;
+            // An entity edited in place is the same object the cache holds, so
+            // comparing them can only ever report "unchanged". Write it.
+            if (current && current !== entity
+                && stableJson(current) === stableJson({ ...entity, filePath: current.filePath })) continue;
             await this.save(kind, entity);
         }
     }
