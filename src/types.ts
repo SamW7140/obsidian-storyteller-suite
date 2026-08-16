@@ -887,6 +887,15 @@ export interface Event {
 
     /** IDs of markers representing this event on various maps */
     markerIds?: string[];
+
+    /**
+     * Timeline branches this event belongs to, mirrored by Branch.linkedEvents.
+     *
+     * Branch membership used to be an array inside the branch claiming events
+     * from outside, which meant it could not travel with the note. Stated here,
+     * an event carries its own branch wherever it goes.
+     */
+    branches?: string[];
 }
 
 /**

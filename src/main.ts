@@ -3226,6 +3226,7 @@ export default class StorytellerSuitePlugin extends Plugin {
 				void import('./modals/TimelineMigrationModal').then(({ TimelineMigrationModal }) => {
 					new TimelineMigrationModal(this.app, this, (storyId) => { void (async () => {
 						const counts = await this.timelineEntities.migrateFromSettings(storyId);
+						await this.backfillEventBranches();
 						const total = counts.eras + counts.tracks + counts.branches;
 						new Notice(counts.skipped
 							? `Moved ${total} into notes. ${counts.skipped} could not be filed and stay in the backup.`
@@ -7529,6 +7530,48 @@ export default class StorytellerSuitePlugin extends Plugin {
         });
     }
 
+    /**
+     * Write branch membership onto the events themselves, once.
+     *
+     * A branch has always recorded which events are its own. Now the event
+     * records it too, which is the half that travels: hand someone an event
+     * note and it says which timeline it belongs to. Only the missing direction
+     * is filled in, so an event that already names the branch is left alone.
+     *
+     * Saves skip sync deliberately. Both sides are already correct here, and
+     * letting the reverse sync run would rewrite every branch note with the
+     * data it just supplied.
+     */
+    async backfillEventBranches(): Promise<number> {
+        const branches = this.getTimelineForks();
+        if (!branches.length) return 0;
+
+        const events = await this.listEvents();
+        const byKey = new Map<string, Event>();
+        for (const event of events) {
+            if (event.id) byKey.set(event.id, event);
+            if (event.name) byKey.set(event.name, event);
+        }
+
+        const touched = new Set<Event>();
+        for (const branch of branches) {
+            for (const key of branch.linkedEvents || []) {
+                const event = byKey.get(key);
+                if (!event) continue;
+                const existing = event.branches || [];
+                if (existing.includes(branch.name)) continue;
+                event.branches = [...existing, branch.name];
+                touched.add(event);
+            }
+        }
+
+        for (const event of touched) {
+            (event as WithSyncFlags<Event>)._skipSync = true;
+            await this.saveEvent(event);
+        }
+        return touched.size;
+    }
+
     /** Whether any settings-era timeline data is still waiting to become notes. */
     hasUnmigratedTimelineEntities(): boolean {
         if (this.timelineEntities.migrated) return false;
@@ -7553,6 +7596,7 @@ export default class StorytellerSuitePlugin extends Plugin {
         const stories = this.settings.stories || [];
         if (!canMigrateWithoutAsking(stories.length)) return;
         const counts = await this.timelineEntities.migrateFromSettings(stories[0].id);
+        await this.backfillEventBranches();
         const total = counts.eras + counts.tracks + counts.branches;
         if (total > 0) {
             new Notice(`Storyteller Suite: moved ${total} timeline eras, tracks and branches into notes.`, 8000);
@@ -7714,6 +7758,7 @@ export default class StorytellerSuitePlugin extends Plugin {
         if (!fork.linkedEvents.includes(eventId)) {
             fork.linkedEvents.push(eventId);
             await this.updateTimelineFork(fork);
+            await this.setEventBranchMembership(eventId, fork.name, true);
         }
     }
 
@@ -7732,7 +7777,31 @@ export default class StorytellerSuitePlugin extends Plugin {
         if (fork.linkedEvents) {
             fork.linkedEvents = fork.linkedEvents.filter(id => id !== eventId);
             await this.updateTimelineFork(fork);
+            await this.setEventBranchMembership(eventId, fork.name, false);
         }
+    }
+
+    /**
+     * Keep the event's own record of its branches in step with the branch's.
+     *
+     * The pair is bidirectional, but this path writes the branch directly, so
+     * without this the event note would quietly disagree with the branch note.
+     * Sync is skipped because both sides are being set here on purpose.
+     */
+    private async setEventBranchMembership(eventKey: string, branchName: string, member: boolean): Promise<void> {
+        const events = await this.listEvents();
+        const event = events.find(candidate => candidate.id === eventKey || candidate.name === eventKey);
+        if (!event) return;
+
+        const current = event.branches || [];
+        const next = member
+            ? (current.includes(branchName) ? current : [...current, branchName])
+            : current.filter(name => name !== branchName);
+        if (next.length === current.length && next.every((name, index) => name === current[index])) return;
+
+        event.branches = next;
+        (event as WithSyncFlags<Event>)._skipSync = true;
+        await this.saveEvent(event);
     }
 
     /**

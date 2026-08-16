@@ -26,6 +26,7 @@ export const WIKI_LINK_ARRAY_FIELDS = new Set([
     'linkedMagicSystems',
     'linkedChapters',
     'linkedScenes',
+    'branches',
     'characters',
     'compendiumEntries',
     'compendiumSources',
@@ -157,7 +158,7 @@ const FRONTMATTER_WHITELISTS: Record<EntityType, Set<string>> = {
     'id', 'entityType', 'name', 'dateTime', 'characters', 'location', 'items', 'cultures', 'magicSystems', 'status',
     'groups', 'profileImagePath', 'images', 'customFields', 'connections', 'color',
     'isMilestone', 'dependencies', 'progress', 'tags', 'narrativeMarkers', 'narrativeSequence',
-    'linkedChapters', 'linkedScenes', 'compendiumEntries',
+    'linkedChapters', 'linkedScenes', 'compendiumEntries', 'branches',
     'mapCoordinates', 'mapId', 'markerId', 'relatedMapIds', 'mapIcon', 'mapColor'
   ]),
   item: new Set([

@@ -16,10 +16,10 @@
  */
 
 import type StorytellerSuitePlugin from '../main';
-import type { Character, Location, Event, PlotItem, Scene, EntityRef, Culture, Economy, MagicSystem, TypedRelationship, Chapter, CompendiumEntry } from '../types';
+import type { Character, Location, Event, PlotItem, Scene, EntityRef, Culture, Economy, MagicSystem, TypedRelationship, Chapter, CompendiumEntry, TimelineFork } from '../types';
 
-type EntityType = 'character' | 'location' | 'event' | 'item' | 'scene' | 'culture' | 'economy' | 'magicsystem' | 'chapter' | 'compendiumentry';
-type SyncEntity = (Character | Location | Event | PlotItem | Scene | Culture | Economy | MagicSystem | Chapter | CompendiumEntry) & { _skipSync?: boolean };
+type EntityType = 'character' | 'location' | 'event' | 'item' | 'scene' | 'culture' | 'economy' | 'magicsystem' | 'chapter' | 'compendiumentry' | 'timelinebranch';
+type SyncEntity = (Character | Location | Event | PlotItem | Scene | Culture | Economy | MagicSystem | Chapter | CompendiumEntry | TimelineFork) & { _skipSync?: boolean };
 type SyncEntityExtended = SyncEntity & {
     entityRefs?: EntityRef[];
     parentLocationId?: string;
@@ -484,6 +484,20 @@ export class EntitySyncService {
             transform: (itemId: string, chapter: SyncEntity) => chapter.name,
             reverseTransform: (chapId: string, item: SyncEntity) => item.name
         },
+        // Event ↔ Branch (branches[] ↔ linkedEvents[])
+        // Branch membership used to live only inside the branch, so an event
+        // note said nothing about which timeline it belonged to and the link
+        // could not travel with the note.
+        {
+            sourceType: 'event',
+            sourceField: 'branches',
+            targetType: 'timelinebranch',
+            targetField: 'linkedEvents',
+            bidirectional: true,
+            isArray: true,
+            transform: (branchId: string, event: SyncEntity) => event.name,
+            reverseTransform: (eventId: string, branch: SyncEntity) => branch.name
+        },
         // Scene ↔ Character (linkedCharacters[] ↔ linkedScenes[])
         {
             sourceType: 'scene',
@@ -606,7 +620,7 @@ export class EntitySyncService {
      * @param oldEntity The previous version of the entity (if available)
      */
     async syncEntity(
-        entityType: 'character' | 'location' | 'event' | 'item' | 'scene' | 'culture' | 'economy' | 'magicsystem' | 'chapter' | 'compendiumentry',
+        entityType: EntityType,
         newEntity: SyncEntity,
         oldEntity?: SyncEntity
     ): Promise<void> {
@@ -1424,7 +1438,7 @@ export class EntitySyncService {
      * Handles case-insensitive matching and resolves by both ID and name
      */
     private async getEntity(
-        entityType: 'character' | 'location' | 'event' | 'item' | 'scene' | 'culture' | 'economy' | 'magicsystem' | 'chapter' | 'compendiumentry',
+        entityType: EntityType,
         idOrName: string
     ): Promise<SyncEntity | null> {
         if (!idOrName) return null;
@@ -1463,6 +1477,11 @@ export class EntitySyncService {
                 case 'compendiumentry':
                     entities = (await this.plugin.listCompendiumEntries());
                     break;
+                case 'timelinebranch':
+                    // Branches are already in memory: the store keeps them
+                    // synchronously for the renderer's draw loop.
+                    entities = this.plugin.getTimelineForks();
+                    break;
                 default:
                     return null;
             }
@@ -1489,7 +1508,7 @@ export class EntitySyncService {
      * Save an entity (delegates to plugin save methods)
      */
     private async saveEntity(
-        entityType: 'character' | 'location' | 'event' | 'item' | 'scene' | 'culture' | 'economy' | 'magicsystem' | 'chapter' | 'compendiumentry',
+        entityType: EntityType,
         entity: SyncEntity
     ): Promise<void> {
         try {
@@ -1526,6 +1545,9 @@ export class EntitySyncService {
                     break;
                 case 'compendiumentry':
                     await this.plugin.saveCompendiumEntry(entity as CompendiumEntry);
+                    break;
+                case 'timelinebranch':
+                    await this.plugin.updateTimelineFork(entity as TimelineFork);
                     break;
             }
         } catch {
@@ -1759,7 +1781,7 @@ export class EntitySyncService {
     }
 
     private async listEntitiesByType(
-        entityType: 'character' | 'location' | 'event' | 'item' | 'scene' | 'culture' | 'economy' | 'magicsystem' | 'chapter' | 'compendiumentry'
+        entityType: EntityType
     ): Promise<SyncEntity[]> {
         switch (entityType) {
             case 'character':
@@ -1782,13 +1804,15 @@ export class EntitySyncService {
                 return (await this.plugin.listChapters());
             case 'compendiumentry':
                 return (await this.plugin.listCompendiumEntries());
+            case 'timelinebranch':
+                return this.plugin.getTimelineForks();
             default:
                 return [];
         }
     }
 
     private async propagateSourceRename(
-        entityType: 'character' | 'location' | 'event' | 'item' | 'scene' | 'culture' | 'economy' | 'magicsystem' | 'chapter' | 'compendiumentry',
+        entityType: EntityType,
         newEntity: SyncEntity,
         oldEntity: SyncEntity
     ): Promise<void> {
