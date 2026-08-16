@@ -1804,8 +1804,8 @@ export interface TimelineFork {
     /** Current status */
     status: 'exploring' | 'canon' | 'abandoned' | 'merged';
 
-    /** Events unique to this fork */
-    forkEvents?: string[];
+    /** Events unique to this branch, mirrored by Event.branches */
+    linkedEvents?: string[];
 
     /** Characters altered in this fork */
     alteredCharacters?: AlteredEntity[];
@@ -1821,6 +1821,9 @@ export interface TimelineFork {
 
     /** Additional notes */
     notes?: string;
+
+    /** Vault note backing this branch, once migrated out of settings */
+    filePath?: string;
 }
 
 /**
@@ -1947,6 +1950,9 @@ export interface TimelineEra {
 
     /** Whether this era is visible on the timeline */
     visible?: boolean;
+
+    /** Vault note backing this era, once migrated out of settings */
+    filePath?: string;
 }
 
 /**
@@ -1996,6 +2002,9 @@ export interface TimelineTrack {
 
     /** Whether this track is currently visible */
     visible?: boolean;
+
+    /** Vault note backing this track, once migrated out of settings */
+    filePath?: string;
 }
 
 /**

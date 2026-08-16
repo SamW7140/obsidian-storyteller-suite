@@ -803,7 +803,7 @@ export class EventModal extends ResponsiveModal {
         // Get forks that already contain this event
         const selectedForkIds = new Set<string>();
         allForks.forEach(fork => {
-            if (fork.forkEvents?.includes(eventIdentifier)) {
+            if (fork.linkedEvents?.includes(eventIdentifier)) {
                 selectedForkIds.add(fork.id);
             }
         });

@@ -94,7 +94,10 @@ export type EntityType =
   | 'magicSystem'
   | 'compendiumEntry'
   | 'book'
-  | 'campaignSession';
+  | 'campaignSession'
+  | 'timelineEra'
+  | 'timelineTrack'
+  | 'timelineBranch';
 
 export function normalizeEntityType(value: unknown): EntityType | null {
   const raw = String(value ?? '').trim().toLowerCase();
@@ -114,6 +117,9 @@ export function normalizeEntityType(value: unknown): EntityType | null {
   if (raw === 'compendiumentry' || raw === 'compendium-entry' || raw === 'compendium_entry') return 'compendiumEntry';
   if (raw === 'book') return 'book';
   if (raw === 'campaignsession' || raw === 'campaign-session' || raw === 'campaign_session') return 'campaignSession';
+  if (raw === 'timelineera' || raw === 'timeline-era' || raw === 'timeline_era' || raw === 'era') return 'timelineEra';
+  if (raw === 'timelinetrack' || raw === 'timeline-track' || raw === 'timeline_track' || raw === 'track') return 'timelineTrack';
+  if (raw === 'timelinebranch' || raw === 'timeline-branch' || raw === 'timeline_branch' || raw === 'branch') return 'timelineBranch';
   return null;
 }
 
@@ -239,6 +245,19 @@ const FRONTMATTER_WHITELISTS: Record<EntityType, Set<string>> = {
     'partyItems', 'flags', 'revealedCompendiumEntryIds', 'groupStandings',
     'collectedBoardItemKeys',
     'status', 'created', 'modified'
+  ]),
+  timelineEra: new Set([
+    'id', 'entityType', 'name', 'storyId', 'startDate', 'endDate', 'color', 'type',
+    'parentEraId', 'tags', 'sortOrder', 'visible', 'customFields'
+  ]),
+  timelineTrack: new Set([
+    'id', 'entityType', 'name', 'storyId', 'type', 'entityId', 'color',
+    'filterCriteria', 'sortOrder', 'visible', 'customFields'
+  ]),
+  timelineBranch: new Set([
+    'id', 'entityType', 'name', 'storyId', 'parentTimelineId', 'divergenceEvent',
+    'divergenceDate', 'status', 'linkedEvents', 'alteredCharacters', 'alteredLocations',
+    'color', 'created', 'customFields'
   ]),
 };
 

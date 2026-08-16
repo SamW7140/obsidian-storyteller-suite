@@ -704,6 +704,9 @@ export class StorytellerSuiteSettingTab extends PluginSettingTab {
                             this.plugin.settings.groupFolderPath,
                             this.plugin.settings.bookFolderPath,
                             this.plugin.settings.sessionsFolderPath,
+                            this.plugin.settings.eraFolderPath,
+                            this.plugin.settings.trackFolderPath,
+                            this.plugin.settings.branchFolderPath,
                         ];
                         const hasStoryPlaceholder = paths.some(p => (p || '').match(/\{story(Name|Slug|Id)\}/i));
                         if (hasStoryPlaceholder && !this.plugin.settings.activeStoryId) {
@@ -744,6 +747,9 @@ export class StorytellerSuiteSettingTab extends PluginSettingTab {
                 this.plugin.settings.groupFolderPath,
                 this.plugin.settings.bookFolderPath,
                 this.plugin.settings.sessionsFolderPath,
+                this.plugin.settings.eraFolderPath,
+                this.plugin.settings.trackFolderPath,
+                this.plugin.settings.branchFolderPath,
             ].filter((p): p is string => Boolean(p && p.trim()));
             const hasStoryPlaceholder = configuredPaths.some(p => /\{story(Name|Slug|Id)\}/i.test(p));
             if (configuredPaths.length > 0 && !hasStoryPlaceholder && this.plugin.settings.stories.length > 1) {
@@ -865,6 +871,27 @@ export class StorytellerSuiteSettingTab extends PluginSettingTab {
                 () => this.plugin.settings.sessionsFolderPath || '',
                 v => { this.plugin.settings.sessionsFolderPath = v; },
                 'e.g. MyWorld/Stories/{storyName}/Sessions'
+            );
+            this.addFolderPathSetting(container,
+                'Eras folder',
+                'Custom folder path for timeline era files. Supports {storyName}, {storySlug}, {storyId}.',
+                () => this.plugin.settings.eraFolderPath || '',
+                v => { this.plugin.settings.eraFolderPath = v; },
+                'e.g. MyWorld/Stories/{storyName}/Eras'
+            );
+            this.addFolderPathSetting(container,
+                'Tracks folder',
+                'Custom folder path for timeline track files. Supports {storyName}, {storySlug}, {storyId}.',
+                () => this.plugin.settings.trackFolderPath || '',
+                v => { this.plugin.settings.trackFolderPath = v; },
+                'e.g. MyWorld/Stories/{storyName}/Tracks'
+            );
+            this.addFolderPathSetting(container,
+                'Branches folder',
+                'Custom folder path for timeline branch files. Supports {storyName}, {storySlug}, {storyId}.',
+                () => this.plugin.settings.branchFolderPath || '',
+                v => { this.plugin.settings.branchFolderPath = v; },
+                'e.g. MyWorld/Stories/{storyName}/Branches'
             );
         }
 

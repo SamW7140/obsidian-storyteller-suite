@@ -83,6 +83,16 @@ export const ENTITY_TEMPLATES: Record<EntityType, Record<string, string>> = {
   },
   campaignSession: {
     'Session Log': '',
+  },
+  timelineEra: {
+    Description: '',
+  },
+  timelineTrack: {
+    Description: '',
+  },
+  timelineBranch: {
+    Description: '',
+    Notes: '',
   }
 };
 
@@ -173,6 +183,16 @@ export const BODY_SECTION_FIELD_MAP: Record<EntityType, Record<string, string>> 
   },
   campaignSession: {
     // 'Session Log' is read by appendToSessionLog / loadSessionLog directly, not via parseFile
+  },
+  timelineEra: {
+    Description: 'description',
+  },
+  timelineTrack: {
+    Description: 'description',
+  },
+  timelineBranch: {
+    Description: 'description',
+    Notes: 'notes',
   },
 };
 

@@ -4,8 +4,8 @@ import { isEventInFork, isEventOnMain, ForkLike } from '../../src/utils/ForkVisi
 const DAY = 24 * 60 * 60 * 1000;
 const DIVERGENCE = 100 * DAY;
 
-const rebellion: ForkLike = { id: 'f1', forkEvents: ['The king lives'] };
-const invasion: ForkLike = { id: 'f2', forkEvents: ['The fleet arrives'] };
+const rebellion: ForkLike = { id: 'f1', linkedEvents: ['The king lives'] };
+const invasion: ForkLike = { id: 'f2', linkedEvents: ['The fleet arrives'] };
 const forks = [rebellion, invasion];
 
 const inFork = (key: string, start: number, fork = rebellion, divergence = DIVERGENCE) =>

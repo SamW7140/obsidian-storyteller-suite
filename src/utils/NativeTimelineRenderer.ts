@@ -453,7 +453,7 @@ export class NativeTimelineRenderer {
     private buildForkLanes(events: Event[]): Lane[] {
         const forks = this.plugin.getTimelineForks();
         const byId = new Map(forks.map(fork => [fork.id, fork]));
-        const mainIds = new Set(forks.flatMap(fork => fork.forkEvents || []));
+        const mainIds = new Set(forks.flatMap(fork => fork.linkedEvents || []));
         const main = events.filter(event => !mainIds.has(this.eventKey(event)));
         const lanes: Lane[] = [{ id: '__main__', label: 'Main timeline', color: this.css('--interactive-accent', '#7c3aed'), items: [], top: 0, height: 0, branchDepth: 0 }];
         main.forEach((event, index) => lanes[0].items.push(this.makeItem(event, index, lanes[0], 0)));
@@ -471,7 +471,7 @@ export class NativeTimelineRenderer {
             // the trunk rather than silently emptying the branch.
             main.filter(event => isEventInFork(this.eventKey(event), this.eventStart(event), fork, divergence, forks))
                 .forEach((event, index) => lane.items.push({ ...this.makeItem(event, index, lane, 0), forkId: fork.id, inherited: true }));
-            events.filter(event => (fork.forkEvents || []).includes(this.eventKey(event))).forEach((event, index) => lane.items.push({ ...this.makeItem(event, index, lane, 0), forkId: fork.id }));
+            events.filter(event => (fork.linkedEvents || []).includes(this.eventKey(event))).forEach((event, index) => lane.items.push({ ...this.makeItem(event, index, lane, 0), forkId: fork.id }));
             lanes.push(lane);
         });
         return lanes;
@@ -502,7 +502,7 @@ export class NativeTimelineRenderer {
         const forkId = this.filters.forkId;
         if (!forkId || forkId === '__compare__') return false;
         const fork = this.plugin.getTimelineFork(forkId);
-        return Boolean(fork) && !fork?.forkEvents?.includes(this.eventKey(event));
+        return Boolean(fork) && !fork?.linkedEvents?.includes(this.eventKey(event));
     }
 
     /** A usable colour string, or undefined when the value is blank or junk. */

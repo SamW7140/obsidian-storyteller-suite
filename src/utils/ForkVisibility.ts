@@ -1,18 +1,18 @@
 // Which events belong to which branch of the timeline.
 //
-// A fork records only the events unique to it (`forkEvents`). Everything
+// A fork records only the events unique to it (`linkedEvents`). Everything
 // before the divergence is shared trunk that the fork inherits rather than
 // copies, so deciding what a branch contains means combining the two.
 
 /** The parts of a TimelineFork that decide membership. */
 export interface ForkLike {
     id: string;
-    forkEvents?: string[];
+    linkedEvents?: string[];
 }
 
 /** An event is on the main timeline when no fork has claimed it. */
 export function isEventOnMain(eventKey: string, forks: ForkLike[]): boolean {
-    return !forks.some(fork => fork.forkEvents?.includes(eventKey));
+    return !forks.some(fork => fork.linkedEvents?.includes(eventKey));
 }
 
 /**
@@ -36,7 +36,7 @@ export function isEventInFork(
     divergence: number,
     allForks: ForkLike[]
 ): boolean {
-    if (fork.forkEvents?.includes(eventKey)) return true;
+    if (fork.linkedEvents?.includes(eventKey)) return true;
     // Another branch's exclusive event never bleeds into this one.
     if (!isEventOnMain(eventKey, allForks)) return false;
     if (!Number.isFinite(divergence)) return true;
