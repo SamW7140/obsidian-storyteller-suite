@@ -24,8 +24,10 @@ function isRecord(value: unknown): value is Record<string, unknown> {
     return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
+const GROUP_MODES: ReadonlyArray<TimelineUIState['groupMode']> = ['none', 'location', 'group', 'character', 'track', 'item', 'culture', 'magicSystem'];
+
 function isGroupMode(value: unknown): value is TimelineUIState['groupMode'] {
-    return value === 'none' || value === 'location' || value === 'group' || value === 'character' || value === 'track';
+    return GROUP_MODES.includes(value as TimelineUIState['groupMode']);
 }
 
 function asStringSet(value: unknown): Set<string> | undefined {
@@ -443,6 +445,7 @@ export class TimelineView extends ItemView {
             density: this.currentState.density,
             editMode: this.currentState.editMode,
             showEras: this.currentState.showEras,
+            showPresence: this.currentState.showPresence,
             narrativeOrder: this.currentState.narrativeOrder,
             defaultGanttDuration: this.plugin.settings.ganttDefaultDuration ?? 1,
             showProgressBars: this.plugin.settings.ganttShowProgressBars ?? true,
@@ -805,6 +808,7 @@ export class TimelineView extends ItemView {
             density: this.currentState.density,
             editMode: this.currentState.editMode,
             showEras: this.currentState.showEras,
+            showPresence: this.currentState.showPresence,
             narrativeOrder: this.currentState.narrativeOrder,
             currentTrackId: this.currentState.currentTrackId,
             currentForkId: this.currentState.currentForkId,
@@ -860,6 +864,7 @@ export class TimelineView extends ItemView {
                 editMode: state.editMode === true,
                 filters,
                 showEras: state.showEras === true,
+                showPresence: state.showPresence === true,
                 narrativeOrder: state.narrativeOrder === true,
                 currentTrackId: typeof state.currentTrackId === 'string' ? state.currentTrackId : undefined,
                 currentForkId: typeof state.currentForkId === 'string' ? state.currentForkId : undefined

@@ -44,7 +44,7 @@ import { CharacterModal } from './modals/CharacterModal';
 import {
     Character, Location, Event, GalleryImage, GalleryData, Story, Group, GroupMemberDetails, GroupRelationship, PlotItem, Reference, Chapter, Scene,
     Culture, Economy, MagicSystem, CompendiumEntry, Book, EntityRef,
-    TimelineFork, CausalityLink, TimelineConflict, TimelineEra, TimelineTrack,
+    TimelineFork, TimelineGroupMode, CausalityLink, TimelineConflict, TimelineEra, TimelineTrack,
     PacingAnalysis, WritingSession, StoryAnalytics, LocationSensoryProfile,
     StoryMap
 } from './types';
@@ -255,7 +255,7 @@ const FRONTMATTER_LINK_ONLY_SCALAR_FIELDS = new Set([
      /** Optional override for "today" used in timeline and relative parsing (ISO string yyyy-MM-dd or full ISO) */
      customTodayISO?: string;
      /** Timeline defaults */
-     defaultTimelineGroupMode?: 'none' | 'location' | 'group' | 'character';
+     defaultTimelineGroupMode?: TimelineGroupMode;
      defaultTimelineZoomPreset?: 'none' | 'decade' | 'century' | 'fit';
      defaultTimelineStack?: boolean;
      defaultTimelineDensity?: number; // 0..100

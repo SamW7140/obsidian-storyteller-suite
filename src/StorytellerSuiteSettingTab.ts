@@ -12,6 +12,7 @@ import StorytellerSuitePlugin from './main';
 import { NewStoryModal } from './modals/NewStoryModal';
 import { EditStoryModal } from './modals/EditStoryModal';
 import type { StoryFolderOverrides } from './folders/FolderResolver';
+import type { TimelineGroupMode } from './types';
 import { MODAL_FIELD_SETS, isModalFieldVisible, setModalFieldHidden } from './modals/entity/ModalFieldVisibility';
 import { FolderSuggestModal } from './modals/FolderSuggestModal';
 import { CustomSheetTemplateModal } from './modals/CustomSheetTemplateModal';
@@ -1071,10 +1072,10 @@ export class StorytellerSuiteSettingTab extends PluginSettingTab {
         new Setting(container)
             .setName(t('defaultTimelineGrouping'))
             .addDropdown(dd => dd
-                .addOptions({ none: t('noGrouping'), location: t('byLocation'), group: t('byGroup'), character: t('byCharacter') })
+                .addOptions({ none: t('noGrouping'), location: t('byLocation'), group: t('byGroup'), character: t('byCharacter'), track: 'By Track', item: 'By Item', culture: 'By Culture', magicSystem: 'By Magic System' })
                 .setValue(this.plugin.settings.defaultTimelineGroupMode || 'none')
                 .onChange(async (v) => {
-                    this.plugin.settings.defaultTimelineGroupMode = v as 'none' | 'location' | 'group' | 'character';
+                    this.plugin.settings.defaultTimelineGroupMode = v as TimelineGroupMode;
                     await this.plugin.saveSettings();
                 }));
 

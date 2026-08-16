@@ -221,6 +221,7 @@ export class TimelineModal extends Modal {
             dependencyArrowStyle: this.plugin.settings.ganttArrowStyle ?? 'solid',
             showDependencies: true,
             showEras: this.currentState.showEras,
+            showPresence: this.currentState.showPresence,
             narrativeOrder: this.currentState.narrativeOrder
         });
 

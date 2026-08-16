@@ -2409,6 +2409,23 @@ export interface LocationSensoryProfile {
 }
 
 /**
+ * Which entity the timeline builds its lanes from.
+ *
+ * Every value here is something events already link to. That is the whole
+ * point: one dropdown re-forms the same events into a different story, which
+ * is the timeline honouring the circular linking the rest of the plugin does.
+ */
+export type TimelineGroupMode =
+    | 'none'
+    | 'location'
+    | 'group'
+    | 'character'
+    | 'track'
+    | 'item'
+    | 'culture'
+    | 'magicSystem';
+
+/**
  * Shared UI state for timeline components (View and Modal)
  * This interface unifies state management across different timeline implementations
  */
@@ -2418,7 +2435,7 @@ export interface TimelineUIState {
     /** Chronology orientation; Gantt always renders horizontally. */
     timelineOrientation: 'horizontal' | 'vertical';
     /** Grouping mode for events */
-    groupMode: 'none' | 'location' | 'group' | 'character' | 'track';
+    groupMode: TimelineGroupMode;
     /** Active filters */
     filters: TimelineUIFilters;
     /** Whether event stacking is enabled */
@@ -2429,6 +2446,8 @@ export interface TimelineUIState {
     editMode: boolean;
     /** Whether era backgrounds are shown */
     showEras: boolean;
+    /** Whether character presence bands are drawn behind character lanes */
+    showPresence?: boolean;
     /** Current track ID being viewed */
     currentTrackId?: string;
     /** Current fork ID being viewed */

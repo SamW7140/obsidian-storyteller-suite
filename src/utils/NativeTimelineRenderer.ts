@@ -1,6 +1,6 @@
 import { App, Notice, TFile } from 'obsidian';
 import StorytellerSuitePlugin from '../main';
-import type { Character, Event, Location, Scene, TimelineFork, TimelineTrack } from '../types';
+import type { Character, Culture, Event, Location, MagicSystem, PlotItem, Scene, TimelineFork, TimelineGroupMode, TimelineTrack } from '../types';
 import { EventModal } from '../modals/EventModal';
 import { parseEventDate, toMillis } from './DateParsing';
 import type { DetectedConflict } from './ConflictDetector';
@@ -17,7 +17,7 @@ import { isEventInFork, isEventOnMain } from './ForkVisibility';
 export interface TimelineRendererOptions {
     ganttMode?: boolean;
     timelineOrientation?: 'horizontal' | 'vertical';
-    groupMode?: 'none' | 'location' | 'group' | 'character' | 'track';
+    groupMode?: TimelineGroupMode;
     showDependencies?: boolean;
     showProgressBars?: boolean;
     dependencyArrowStyle?: 'solid' | 'dashed' | 'dotted';
@@ -26,6 +26,8 @@ export interface TimelineRendererOptions {
     defaultGanttDuration?: number;
     editMode?: boolean;
     showEras?: boolean;
+    /** Draw where characters were, as bands behind their lanes. */
+    showPresence?: boolean;
     narrativeOrder?: boolean;
     onConflictsDetected?: (conflicts: DetectedConflict[]) => void;
     onEventSelected?: (event: Event | null) => void;
@@ -95,6 +97,22 @@ interface Lane {
     branchDepth?: number;
 }
 
+/**
+ * A stretch of time a character spent somewhere, drawn behind their lane.
+ *
+ * Events say what happened; these say where somebody was between the things
+ * that happened, which is what turns a row of chips into a life. They also
+ * make an absence visible: a gap in the band is a character nobody can place.
+ */
+interface PresenceSpan {
+    laneId: string;
+    start: number;
+    /** Undefined when the stay has no recorded end, so it runs off the view. */
+    end?: number;
+    label: string;
+    color: string;
+}
+
 interface CalendarBand {
     startDay: number;
     endDay: number;
@@ -152,6 +170,9 @@ export class NativeTimelineRenderer {
     private events: Event[] = [];
     private locations: Location[] = [];
     private characters: Character[] = [];
+    private items: PlotItem[] = [];
+    private cultures: Culture[] = [];
+    private magicSystems: MagicSystem[] = [];
     private scenes: Scene[] = [];
     private watchedNotes: Array<{ name: string; date: string; filePath: string }> = [];
     private showScenes = false;
@@ -162,6 +183,7 @@ export class NativeTimelineRenderer {
     private resizeObserver: ResizeObserver | null = null;
     private frame = 0;
     private lanes: Lane[] = [];
+    private presence: PresenceSpan[] = [];
     private visibleItems: NativeItem[] = [];
     private selected: NativeItem | null = null;
     private conflictsByEvent = new Map<string, DetectedConflict[]>();
@@ -202,6 +224,7 @@ export class NativeTimelineRenderer {
             defaultGanttDuration: 1,
             editMode: false,
             showEras: false,
+            showPresence: false,
             narrativeOrder: false,
             ...options
         };
@@ -227,12 +250,21 @@ export class NativeTimelineRenderer {
     applyFilters(filters: Partial<TimelineFilters>): void { this.filters = { ...this.filters, ...filters }; this.rebuild(false); }
     setGanttMode(value: boolean): void { this.options.ganttMode = value; this.rebuild(false); }
     setTimelineOrientation(value: 'horizontal' | 'vertical'): void { this.options.timelineOrientation = value; this.rebuild(false); }
-    setGroupMode(value: TimelineRendererOptions['groupMode']): void { this.options.groupMode = value || 'none'; this.rebuild(false); }
+    setGroupMode(value: TimelineRendererOptions['groupMode']): void {
+        this.options.groupMode = value || 'none';
+        // Items, cultures and magic systems are not held unless a lane mode
+        // wants their names, so switching into one has to fetch them before the
+        // lanes are built or the sidebar reads out raw ids.
+        void this.loadGroupSources().then(() => this.rebuild(false));
+    }
     // Redraws because edit mode is not just an input mode: it decides whether
     // the date slots are drawn and whether the markers register as drag
     // targets, so toggling it without a repaint leaves both dead.
     setEditMode(value: boolean): void { this.options.editMode = value; this.container.toggleClass('is-editing', value); this.scheduleDraw(); }
     setShowEras(value: boolean): void { this.options.showEras = value; this.scheduleDraw(); }
+    // Rebuilds rather than redraws: the spans are computed once per build, not
+    // per frame, so there is nothing to draw until one has run.
+    setShowPresence(value: boolean): void { this.options.showPresence = value; this.rebuild(false); }
     setNarrativeOrder(value: boolean): void { this.options.narrativeOrder = value; this.rebuild(false); }
     setShowScenes(value: boolean): void { this.showScenes = value; this.rebuild(false); }
     setShowWatchedNotes(value: boolean): void { this.showWatchedNotes = value; this.rebuild(false); }
@@ -404,6 +436,7 @@ export class NativeTimelineRenderer {
             this.options.onConflictsDetected?.(conflicts);
         }
         this.lanes = this.buildLanes(sourceEvents);
+        this.presence = this.buildPresence();
         this.layoutRows();
         if (fit) this.fitToView(); else this.scheduleDraw();
     }
@@ -488,6 +521,47 @@ export class NativeTimelineRenderer {
             lanes.push(lane);
         });
         return lanes;
+    }
+
+    /**
+     * Where each character was, drawn behind their own lane.
+     *
+     * Only character lanes get bands. In any other grouping a lane holds
+     * several people at once, so a band behind it would claim the whole lane
+     * was in one place, which is worse than drawing nothing.
+     *
+     * A stay with no recorded end runs until the next stay begins, and if it is
+     * the last one, it stays open. Guessing an end date would invent a
+     * departure the writer never wrote.
+     */
+    private buildPresence(): PresenceSpan[] {
+        if (!this.options.showPresence || this.options.groupMode !== 'character') return [];
+        const laneIds = new Set(this.lanes.map(lane => lane.id));
+        const spans: PresenceSpan[] = [];
+        this.characters.forEach(character => {
+            const laneId = `character:${character.name}`;
+            if (!laneIds.has(laneId)) return;
+            const stays = (character.locationHistory || [])
+                .map(entry => ({
+                    start: this.parseDate(entry.timeRange?.start || ''),
+                    end: entry.timeRange?.end ? this.parseDate(entry.timeRange.end) : NaN,
+                    place: this.resolveLocationName(entry.locationId)
+                }))
+                .filter(stay => Number.isFinite(stay.start))
+                .sort((a, b) => a.start - b.start);
+            stays.forEach((stay, index) => {
+                const next = stays[index + 1]?.start;
+                const end = Number.isFinite(stay.end) ? stay.end : next;
+                spans.push({
+                    laneId,
+                    start: stay.start,
+                    end: Number.isFinite(end) ? end : undefined,
+                    label: stay.place,
+                    color: this.colorFor(stay.place)
+                });
+            });
+        });
+        return spans;
     }
 
     private makeItem(event: Event, eventIndex: number, lane: Pick<Lane, 'id' | 'label' | 'color' | 'explicitColor'>, duplicateIndex: number): NativeItem {
@@ -659,6 +733,16 @@ export class NativeTimelineRenderer {
             const name = event.location ? this.resolveLocationName(event.location) : 'No location';
             return [{ id: `location:${name}`, label: name, color: this.colorFor(name) }];
         }
+        // Items, cultures and magic systems are all many-per-event and all
+        // stored the same way, so one path covers them. An item lane is the
+        // sword's whole history: forged, stolen, carried, lost.
+        if (mode === 'item' || mode === 'culture' || mode === 'magicSystem') {
+            const source = mode === 'item' ? this.items : mode === 'culture' ? this.cultures : this.magicSystems;
+            const links = (mode === 'item' ? event.items : mode === 'culture' ? event.cultures : event.magicSystems) || [];
+            const empty = mode === 'item' ? 'No item' : mode === 'culture' ? 'No culture' : 'No magic system';
+            const resolved = links.length ? links.map(value => this.resolveEntityName(source, value)) : [empty];
+            return Array.from(new Set(resolved)).map(name => ({ id: `${mode}:${name}`, label: name, color: this.colorFor(name) }));
+        }
         if (mode === 'group') {
             const id = event.groups?.[0] || '__ungrouped__';
             const group = this.plugin.getGroups().find(candidate => candidate.id === id || candidate.name === id);
@@ -727,6 +811,7 @@ export class NativeTimelineRenderer {
         this.drawAxis(ctx, width, height);
         this.drawHorizontalCalendarLayers(ctx, width);
         this.drawEras(ctx, width, height);
+        this.drawPresence(ctx, width, height);
         this.lanes.forEach(lane => this.drawLane(ctx, lane, width, height));
         this.drawForkBranches(ctx, width, height);
         this.drawConnectors(ctx, width, height);
@@ -1500,6 +1585,41 @@ export class NativeTimelineRenderer {
         });
     }
 
+    private drawPresence(ctx: CanvasRenderingContext2D, width: number, height: number): void {
+        if (!this.presence.length) return;
+        const byId = new Map(this.lanes.map(lane => [lane.id, lane]));
+        ctx.save();
+        this.clipPlot(ctx, width, height);
+        ctx.font = `10px ${this.css('--font-interface', 'sans-serif')}`;
+        this.presence.forEach(span => {
+            const lane = byId.get(span.laneId);
+            if (!lane) return;
+            const x1 = this.timeToX(span.start, width);
+            // An open-ended stay is drawn past the right edge rather than
+            // stopped at it, so it reads as continuing instead of as ending
+            // exactly where the window happens to stop.
+            const x2 = span.end === undefined ? width + 40 : this.timeToX(span.end, width);
+            if (x2 <= SIDEBAR_WIDTH || x1 >= width) return;
+            const top = lane.top - this.scrollTop;
+            if (top + lane.height < this.axisHeight() || top > height) return;
+            ctx.globalAlpha = 0.13;
+            ctx.fillStyle = span.color;
+            ctx.fillRect(x1, top + 2, Math.max(2, x2 - x1), lane.height - 4);
+            ctx.globalAlpha = 0.5;
+            ctx.strokeStyle = span.color;
+            ctx.lineWidth = 1;
+            ctx.beginPath(); ctx.moveTo(x1, top + 2); ctx.lineTo(x1, top + lane.height - 2); ctx.stroke();
+            // The label only earns its place when the band is wide enough to
+            // hold it without overlapping the next one.
+            if (x2 - x1 > 54) {
+                ctx.globalAlpha = 0.75;
+                ctx.fillStyle = this.css('--text-muted', '#9ca3af');
+                ctx.fillText(span.label, x1 + 5, top + lane.height - 6);
+            }
+        });
+        ctx.restore();
+    }
+
     /**
      * Where an item sits, even when it was never drawn.
      *
@@ -1992,8 +2112,18 @@ export class NativeTimelineRenderer {
      * readable name, so try both before falling back to the raw value.
      */
     private resolveLocationName(value: string): string {
-        const match = this.locations.find(location => location.id === value)
-            || this.locations.find(location => location.name === value);
+        return this.resolveEntityName(this.locations, value);
+    }
+
+    /**
+     * A linked entity's display name, given the list it lives in.
+     *
+     * Id is tried before name so a rename cannot split one entity into two
+     * lanes, and the raw value survives when nothing matches: a link to an
+     * entity that was deleted should still show what it pointed at.
+     */
+    private resolveEntityName(source: Array<{ id?: string; name: string }>, value: string): string {
+        const match = source.find(entity => entity.id === value) || source.find(entity => entity.name === value);
         return match?.name || value;
     }
 
@@ -2006,9 +2136,7 @@ export class NativeTimelineRenderer {
      * the id and others the name.
      */
     private resolveCharacterName(value: string): string {
-        const match = this.characters.find(character => character.id === value)
-            || this.characters.find(character => character.name === value);
-        return match?.name || value;
+        return this.resolveEntityName(this.characters, value);
     }
 
     private eventLocations(event: Event): string[] {
@@ -2039,7 +2167,26 @@ export class NativeTimelineRenderer {
         );
     }
 
+    /**
+     * The entity list the current lane mode names its lanes from.
+     *
+     * Each of these is a full folder read, so only the mode in play pays for
+     * one. The others are dropped rather than kept stale, which also means a
+     * mode nobody selected costs nothing on every refresh.
+     */
+    private async loadGroupSources(): Promise<void> {
+        const mode = this.options.groupMode;
+        const load = async <T>(wanted: boolean, list: () => Promise<T[]>): Promise<T[]> => {
+            if (!wanted) return [];
+            try { return await list(); } catch { return []; }
+        };
+        this.items = await load(mode === 'item', () => this.plugin.listPlotItems());
+        this.cultures = await load(mode === 'culture', () => this.plugin.listCultures());
+        this.magicSystems = await load(mode === 'magicSystem', () => this.plugin.listMagicSystems());
+    }
+
     private async loadOptionalSources(): Promise<void> {
+        await this.loadGroupSources();
         try { this.scenes = await this.plugin.listScenes(); } catch { this.scenes = []; }
         this.watchedNotes = [];
         const property = this.plugin.settings.timelineWatchProperty || 'timeline-date';

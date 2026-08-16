@@ -5,7 +5,7 @@ import { setIcon, Menu, Notice, Setting } from 'obsidian';
 import { t } from '../i18n/strings';
 import StorytellerSuitePlugin from '../main';
 import { TimelineRenderer } from './NativeTimelineRenderer';
-import { TimelineUIState, Event } from '../types';
+import { TimelineUIState, TimelineGroupMode, Event } from '../types';
 import { TrackManagerModal } from '../modals/TrackManagerModal';
 import { ConflictViewModal } from '../modals/ConflictViewModal';
 import { TagTimelineModal } from '../modals/TagTimelineModal';
@@ -115,6 +115,7 @@ export class TimelineControlsBuilder {
             density: plugin.settings.defaultTimelineDensity ?? 50,
             editMode: false,
             showEras: false,
+            showPresence: false,
             narrativeOrder: false
         };
     }
@@ -202,7 +203,10 @@ export class TimelineControlsBuilder {
             { value: 'location', label: t('byLocation') },
             { value: 'group', label: t('byGroup') },
             { value: 'character', label: t('byCharacter') },
-            { value: 'track', label: 'By Track' }
+            { value: 'track', label: 'By Track' },
+            { value: 'item', label: 'By Item' },
+            { value: 'culture', label: 'By Culture' },
+            { value: 'magicSystem', label: 'By Magic System' }
         ].forEach(opt => {
             const option = select.createEl('option', { value: opt.value, text: opt.label });
             if (opt.value === this.state.groupMode) {
@@ -211,7 +215,7 @@ export class TimelineControlsBuilder {
         });
 
         select.addEventListener('change', () => {
-            this.state.groupMode = select.value as 'none' | 'location' | 'group' | 'character' | 'track';
+            this.state.groupMode = select.value as TimelineGroupMode;
             this.callbacks.getRenderer()?.setGroupMode(this.state.groupMode);
             this.callbacks.onStateChange();
         });
@@ -581,6 +585,7 @@ export class TimelineControlsBuilder {
         // screen, so folding them into the number would make it mean nothing.
         const layers = () => [
             { name: 'Era backgrounds', on: this.state.showEras },
+            { name: 'Presence bands', on: this.state.showPresence === true },
             { name: 'Scenes', on: extras.getShowScenes() },
             { name: 'Vault notes', on: extras.getShowWatchedNotes() }
         ];
@@ -610,6 +615,19 @@ export class TimelineControlsBuilder {
                 this.state.showEras = !this.state.showEras;
                 renderer?.setShowEras(this.state.showEras);
             });
+            // Named for what it does rather than for the grouping it needs, and
+            // the hint carries the condition, because a checked layer that
+            // draws nothing reads as broken.
+            menu.addItem(item => item
+                .setTitle(this.state.groupMode === 'character' ? 'Presence bands' : 'Presence bands (group by character)')
+                .setChecked(this.state.showPresence === true)
+                .setDisabled(this.state.groupMode !== 'character')
+                .onClick(() => {
+                    this.state.showPresence = !this.state.showPresence;
+                    renderer?.setShowPresence(this.state.showPresence);
+                    syncBadge();
+                    this.callbacks.onStateChange();
+                }));
             check('Scenes', extras.getShowScenes(), () => extras.setShowScenes(!extras.getShowScenes()));
             check('Vault notes', extras.getShowWatchedNotes(), () => extras.setShowWatchedNotes(!extras.getShowWatchedNotes()));
             menu.addItem(item => item.setTitle('Manage eras…').setIcon('calendar-range')
