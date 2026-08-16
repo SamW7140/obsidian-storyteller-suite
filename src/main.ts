@@ -3211,47 +3211,14 @@ export default class StorytellerSuitePlugin extends Plugin {
 		this.addCommand({
 			id: 'migrate-timeline-entities-to-notes',
 			name: 'Move timeline eras, tracks and branches into notes',
-			callback: () => {
-				if (this.timelineEntities.migrated) {
-					new Notice('Timeline eras, tracks and branches are already stored as notes.');
-					return;
-				}
-				if (!this.hasUnmigratedTimelineEntities()) {
-					new Notice('There is no timeline data left in settings to move.');
-					return;
-				}
-				if (!this.settings.stories.length) {
-					new Notice('Create a story first: notes need a story folder to live in.');
-					return;
-				}
-				void import('./modals/TimelineMigrationModal').then(({ TimelineMigrationModal }) => {
-					new TimelineMigrationModal(this.app, this, (storyId) => { void (async () => {
-						const counts = await this.timelineEntities.migrateFromSettings(storyId);
-						await this.backfillEventBranches();
-						await this.migrateCausalityLinksToEvents();
-						const total = counts.eras + counts.tracks + counts.branches;
-						new Notice(counts.skipped
-							? `Moved ${total} into notes. ${counts.skipped} could not be filed and stay in the backup.`
-							: `Moved ${total} eras, tracks and branches into notes.`, 8000);
-						this.refreshTimelineViews();
-					})(); }).open();
-				});
-			}
+			callback: () => this.openTimelineEntityMigration()
 		});
 
 		// Undo the notes migration
 		this.addCommand({
 			id: 'rollback-timeline-entities-migration',
 			name: 'Undo timeline notes migration',
-			callback: () => { void (async () => {
-				if (!this.settings.timelineEntityBackup) {
-					new Notice('No timeline migration backup found.');
-					return;
-				}
-				await this.timelineEntities.rollbackMigration();
-				new Notice('Timeline eras, tracks and branches are read from settings again. The notes were left in place.', 8000);
-				this.refreshTimelineViews();
-			})(); }
+			callback: () => { void this.rollbackTimelineEntityMigration(); }
 		});
 
 		// ============================================================
@@ -7574,6 +7541,61 @@ export default class StorytellerSuitePlugin extends Plugin {
         return touched.size;
     }
 
+    /**
+     * Open the migration chooser, or say why it will not open.
+     *
+     * The command palette and the Timeline settings tab both come through
+     * here, so the preconditions are explained the same way wherever the user
+     * happens to find it.
+     */
+    openTimelineEntityMigration(onDone?: () => void): void {
+        if (this.timelineEntities.migrated) {
+            new Notice('Timeline eras, tracks and branches are already stored as notes.');
+            return;
+        }
+        if (!this.hasUnmigratedTimelineEntities()) {
+            new Notice('There is no timeline data left in settings to move.');
+            return;
+        }
+        if (!this.settings.stories.length) {
+            new Notice('Create a story first: notes need a story folder to live in.');
+            return;
+        }
+        void import('./modals/TimelineMigrationModal').then(({ TimelineMigrationModal }) => {
+            new TimelineMigrationModal(this.app, this, (storyId) => { void (async () => {
+                const counts = await this.timelineEntities.migrateFromSettings(storyId);
+                await this.backfillEventBranches();
+                await this.migrateCausalityLinksToEvents();
+                const total = counts.eras + counts.tracks + counts.branches;
+                new Notice(counts.skipped
+                    ? `Moved ${total} into notes. ${counts.skipped} could not be filed and stay in the backup.`
+                    : `Moved ${total} eras, tracks and branches into notes.`, 8000);
+                this.refreshTimelineViews();
+                onDone?.();
+            })(); }).open();
+        });
+    }
+
+    /** Put the settings arrays back. The notes stay where they are. */
+    async rollbackTimelineEntityMigration(onDone?: () => void): Promise<void> {
+        if (!this.settings.timelineEntityBackup) {
+            new Notice('No timeline migration backup found.');
+            return;
+        }
+        await this.timelineEntities.rollbackMigration();
+        new Notice('Timeline eras, tracks and branches are read from settings again. The notes were left in place.', 8000);
+        this.refreshTimelineViews();
+        onDone?.();
+    }
+
+    /** How many rows are still waiting in settings, for the settings tab to report. */
+    unmigratedTimelineCounts(): { eras: number; tracks: number; branches: number; total: number } {
+        const eras = this.settings.timelineEras?.length || 0;
+        const tracks = this.settings.timelineTracks?.length || 0;
+        const branches = this.settings.timelineForks?.length || 0;
+        return { eras, tracks, branches, total: eras + tracks + branches };
+    }
+
     /** Whether any settings-era timeline data is still waiting to become notes. */
     hasUnmigratedTimelineEntities(): boolean {
         if (this.timelineEntities.migrated) return false;
@@ -7596,7 +7618,18 @@ export default class StorytellerSuitePlugin extends Plugin {
     async migrateTimelineEntitiesIfUnambiguous(): Promise<void> {
         if (!this.hasUnmigratedTimelineEntities()) return;
         const stories = this.settings.stories || [];
-        if (!canMigrateWithoutAsking(stories.length)) return;
+        if (!canMigrateWithoutAsking(stories.length)) {
+            // Nothing moves on its own here, and silence would read as "there is
+            // nothing to do". Say where the choice lives instead.
+            if (stories.length) {
+                new Notice(
+                    'Storyteller Suite: your timeline eras, tracks and branches are still stored in plugin settings. ' +
+                    'Settings > Timeline has a button to move them into notes.',
+                    12000
+                );
+            }
+            return;
+        }
         const counts = await this.timelineEntities.migrateFromSettings(stories[0].id);
         await this.backfillEventBranches();
         await this.migrateCausalityLinksToEvents();
@@ -9664,6 +9697,18 @@ export default class StorytellerSuitePlugin extends Plugin {
         if (!('eraFolderPath' in this.settings)) { this.settings.eraFolderPath = DEFAULT_SETTINGS.eraFolderPath; settingsUpdated = true; }
         if (!('trackFolderPath' in this.settings)) { this.settings.trackFolderPath = DEFAULT_SETTINGS.trackFolderPath; settingsUpdated = true; }
         if (!('branchFolderPath' in this.settings)) { this.settings.branchFolderPath = DEFAULT_SETTINGS.branchFolderPath; settingsUpdated = true; }
+
+        // A vault with no eras, tracks or branches in settings has nothing to
+        // migrate, so it can start on notes and never meet the migration at
+        // all. Only the vaults that actually hold old data get asked.
+        if (!this.settings.timelineEntitiesInNotes
+            && !this.settings.timelineEras?.length
+            && !this.settings.timelineTracks?.length
+            && !this.settings.timelineForks?.length) {
+            this.settings.timelineEntitiesInNotes = true;
+            settingsUpdated = true;
+        }
+
         if (!('compileWorkflows' in this.settings) || !Array.isArray(this.settings.compileWorkflows)) {
             this.settings.compileWorkflows = [];
             settingsUpdated = true;

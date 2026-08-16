@@ -964,6 +964,8 @@ export class StorytellerSuiteSettingTab extends PluginSettingTab {
 
     // ─── Tab: Timeline ────────────────────────────────────────────────────────
     private renderTimelineTab(container: HTMLElement): void {
+        this.renderTimelineStorageSection(container);
+
         new Setting(container).setName(t('timelineAndParsing')).setHeading();
 
         const calendarRegistry = new CalendarRegistry(this.plugin);
@@ -1183,6 +1185,61 @@ export class StorytellerSuiteSettingTab extends PluginSettingTab {
             'Alternative to the watch property: tag any note with this tag (e.g. #timeline) ' +
             'and give it a "date" frontmatter field to include it on the timeline.'
         );
+    }
+
+    // ─── Timeline storage section ─────────────────────────────────────────────
+
+    /**
+     * Where eras, tracks and branches are kept, and the button that moves them.
+     *
+     * A vault with more than one story cannot be migrated without being asked
+     * which story adopts the unlabelled rows, so the move has to be triggered
+     * by hand. This is that trigger somewhere a user will actually find it,
+     * rather than only in the command palette.
+     */
+    private renderTimelineStorageSection(container: HTMLElement): void {
+        const plugin = this.plugin;
+        const pending = plugin.unmigratedTimelineCounts();
+        const migrated = plugin.timelineEntities.migrated;
+
+        if (!migrated && pending.total === 0) return;
+
+        new Setting(container).setName('Timeline storage').setHeading();
+
+        if (migrated) {
+            const setting = new Setting(container)
+                .setName('Eras, tracks and branches are notes')
+                .setDesc('They live in your story folders alongside characters and locations, so they are shared, versioned and searchable like every other entity.');
+            if (plugin.settings.timelineEntityBackup) {
+                setting.addButton(button => button
+                    .setButtonText('Undo migration')
+                    .onClick(() => { void plugin.rollbackTimelineEntityMigration(() => this.display()); }));
+            }
+            return;
+        }
+
+        const parts: string[] = [];
+        if (pending.eras) parts.push(`${pending.eras} era${pending.eras === 1 ? '' : 's'}`);
+        if (pending.tracks) parts.push(`${pending.tracks} track${pending.tracks === 1 ? '' : 's'}`);
+        if (pending.branches) parts.push(`${pending.branches} branch${pending.branches === 1 ? '' : 'es'}`);
+
+        const hasStory = plugin.settings.stories.length > 0;
+        const desc =
+            `${parts.join(', ')} waiting to move. Stored this way they are invisible to search and to Graph view, ` +
+            'and they do not travel when you share a story. Moving them turns each one into a note in its story folder. ' +
+            'Your timeline looks the same afterwards, and a backup is written first so the move can be undone.' +
+            (hasStory ? '' : ' Create a story first: notes need a story folder to live in.');
+
+        const setting = new Setting(container)
+            .setName('Eras, tracks and branches are still in plugin settings')
+            .setDesc(desc);
+
+        if (hasStory) {
+            setting.addButton(button => button
+                .setButtonText('Move into notes')
+                .setCta()
+                .onClick(() => plugin.openTimelineEntityMigration(() => this.display())));
+        }
     }
 
     // ─── Tab: Maps ────────────────────────────────────────────────────────────
