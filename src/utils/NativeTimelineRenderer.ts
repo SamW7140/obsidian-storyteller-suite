@@ -699,6 +699,13 @@ export class NativeTimelineRenderer {
         // vertical branch returns early.
         this.visibleItems = [];
         this.markerHits = [];
+        // A rect is a screen position, so it is only true for the frame that
+        // computed it. Keeping last frame's meant an arrow end whose bar had
+        // scrolled away stayed pinned to the viewport and drifted along with
+        // the scroll instead of leaving with its bar.
+        for (const lane of this.lanes) {
+            for (const item of lane.items) item.rect = undefined;
+        }
         this.slotTimes = this.computeSlotTimes();
         if (!this.options.ganttMode && this.options.timelineOrientation === 'vertical') {
             this.drawVerticalTimeline(ctx, width, height);
