@@ -1516,7 +1516,26 @@ export class NativeTimelineRenderer {
         );
     }
 
-    private drawConnectors(ctx: CanvasRenderingContext2D, width: number, _height: number): void {
+    /**
+     * Restrict drawing to the plot area, the way lanes already do.
+     *
+     * Anything that reaches for an off-screen position needs this or it paints
+     * across the sidebar and the axis header, where it reads as a stray line
+     * floating over the chrome rather than as part of the timeline.
+     */
+    private clipPlot(ctx: CanvasRenderingContext2D, width: number, height: number): void {
+        const vertical = !this.options.ganttMode && this.options.timelineOrientation === 'vertical';
+        ctx.beginPath();
+        ctx.rect(
+            vertical ? 0 : SIDEBAR_WIDTH,
+            this.axisHeight(),
+            vertical ? width : Math.max(0, width - SIDEBAR_WIDTH),
+            height
+        );
+        ctx.clip();
+    }
+
+    private drawConnectors(ctx: CanvasRenderingContext2D, width: number, height: number): void {
         // Indexed over every item, not just the drawn ones, so an arrow keeps
         // both ends when one of them scrolls out of view.
         const byKey = new Map<string, { item: NativeItem; lane: Lane }[]>();
@@ -1526,6 +1545,7 @@ export class NativeTimelineRenderer {
             });
         }));
         ctx.save();
+        this.clipPlot(ctx, width, height);
         ctx.strokeStyle = this.css('--interactive-accent', '#8b5cf6');
         ctx.lineWidth = 2;
         if (this.options.dependencyArrowStyle === 'dashed') ctx.setLineDash([8, 5]);
@@ -1555,9 +1575,11 @@ export class NativeTimelineRenderer {
         ctx.restore();
     }
 
-    private drawForkBranches(ctx: CanvasRenderingContext2D, width: number, _height: number): void {
+    private drawForkBranches(ctx: CanvasRenderingContext2D, width: number, height: number): void {
         if (this.filters.forkId !== '__compare__' || this.lanes.length < 2) return;
         const forks = this.plugin.getTimelineForks();
+        ctx.save();
+        this.clipPlot(ctx, width, height);
         forks.forEach((fork, index) => {
             const lane = this.lanes[index + 1]; if (!lane) return;
             const x = this.timeToX(this.parseDate(fork.divergenceDate), width);
@@ -1565,6 +1587,7 @@ export class NativeTimelineRenderer {
             const branchY = lane.top - this.scrollTop + 16;
             ctx.save(); ctx.strokeStyle = lane.color; ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(x, mainY); ctx.bezierCurveTo(x + 28, mainY, x + 28, branchY, x + 56, branchY); ctx.stroke(); ctx.restore();
         });
+        ctx.restore();
     }
 
     private drawNow(ctx: CanvasRenderingContext2D, width: number, height: number): void {
@@ -2006,13 +2029,24 @@ export class NativeTimelineRenderer {
     }
 
     private eventStart(event: Event): number { return event.dateTime ? this.parseDate(event.dateTime.split(/\s+(?:to|through|until)\s+/i)[0]) : Number.POSITIVE_INFINITY; }
+    /**
+     * A date as a position on this axis.
+     *
+     * Parsed in UTC deliberately. Everything else here counts in whole DAY_MS
+     * from the Unix epoch: the gridlines land on `Math.ceil(time / step) * step`
+     * and `formatTick` labels them with `timeZone: 'UTC'`. Parsing in the
+     * system zone put "1420-03-15" at local midnight, which is the local UTC
+     * offset away from the gridline labelled 15 March, so every event sat
+     * beside its own day instead of on it. West of Greenwich it landed on the
+     * day before.
+     */
     private parseDate(value: string): number {
         const calendar = this.calendarRegistry.getActiveCalendar();
         if (calendar.id !== GREGORIAN_CALENDAR.id) {
             const absoluteDay = parseToAbsoluteDay(value, calendar);
             if (absoluteDay != null) return (absoluteDay - this.unixEpochAbsoluteDay()) * DAY_MS;
         }
-        const parsed = parseEventDate(value, { referenceDate: this.referenceDate });
+        const parsed = parseEventDate(value, { referenceDate: this.referenceDate, timezone: 'utc' });
         return toMillis(parsed.start) ?? NaN;
     }
     private eventKey(event: Event): string { return String(event.id || event.name); }
