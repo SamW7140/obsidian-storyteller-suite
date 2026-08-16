@@ -162,6 +162,16 @@ const PINCH_WHEEL_GAIN = 7;
  * a cap the gain tuned for the trackpad would make one notch jump nearly 3x.
  */
 const PINCH_MAX_PIXELS = 60;
+/**
+ * Logical size of a full-range export, before the scale factor.
+ *
+ * Wide enough that a long story's chips do not collapse into one another, and
+ * drawn at 2x so the text survives being scaled down into a video or a post.
+ */
+const EXPORT_WIDTH = 2400;
+const EXPORT_VERTICAL_WIDTH = 1000;
+const EXPORT_MIN_HEIGHT = 600;
+const EXPORT_SCALE = 2;
 /** Milestone gold, overridable through --sts-timeline-milestone. */
 const MILESTONE_GOLD = '#d9a520';
 /** Radius of an empty date slot on the lane baseline. */
@@ -193,6 +203,12 @@ export class NativeTimelineRenderer {
     private ctx: CanvasRenderingContext2D | null = null;
     private resizeObserver: ResizeObserver | null = null;
     private frame = 0;
+    /**
+     * Size to lay out and draw against, while rendering somewhere that is not
+     * the on-screen root. Null the rest of the time, which is every frame the
+     * user actually sees.
+     */
+    private exportSurface: { width: number; height: number } | null = null;
     private lanes: Lane[] = [];
     private presence: PresenceSpan[] = [];
     private visibleItems: NativeItem[] = [];
@@ -380,13 +396,89 @@ export class NativeTimelineRenderer {
         return { start: new Date(Math.min(...starts)), end: new Date(Math.max(...starts)) };
     }
 
-    async exportAsImage(format: 'png' | 'jpg'): Promise<void> {
-        if (!this.canvas) return;
+    /**
+     * @param scope 'view' captures what is on screen. 'full' redraws the whole
+     *   story onto its own surface first, which is the one worth sharing: an
+     *   export of the view is only ever whatever happened to be in the window
+     *   at whatever zoom was set when the menu was opened.
+     */
+    async exportAsImage(format: 'png' | 'jpg', scope: 'view' | 'full' = 'view'): Promise<void> {
+        const canvas = scope === 'full' ? this.renderFullRange() : this.canvas;
+        if (!canvas) return;
         const mime = format === 'jpg' ? 'image/jpeg' : 'image/png';
         const link = this.container.ownerDocument.createElement('a');
-        link.download = `timeline-${new Date().toISOString().slice(0, 10)}.${format}`;
-        link.href = this.canvas.toDataURL(mime, 0.94);
+        const suffix = scope === 'full' ? '-full' : '';
+        link.download = `timeline-${new Date().toISOString().slice(0, 10)}${suffix}.${format}`;
+        link.href = canvas.toDataURL(mime, 0.94);
         link.click();
+    }
+
+    /**
+     * The whole timeline on one canvas, at a size nobody's window is.
+     *
+     * Every drawing path reads the view window and the surface size off the
+     * renderer, so this borrows both, draws once, and hands them back. The live
+     * canvas is swapped out for the same reason: draw() paints into whatever
+     * this.ctx currently is, and painting the export into the visible canvas
+     * would leave the user staring at a frame they never asked for.
+     */
+    private renderFullRange(): HTMLCanvasElement | null {
+        const range = this.getDateRange();
+        if (!range || !this.ctx) return null;
+        const vertical = !this.options.ganttMode && this.options.timelineOrientation === 'vertical';
+        const saved = {
+            canvas: this.canvas, ctx: this.ctx, surface: this.exportSurface,
+            start: this.viewStart, end: this.viewEnd, scrollTop: this.scrollTop,
+            hovered: this.hovered, selected: this.selected
+        };
+        try {
+            const span = Math.max(DAY_MS, range.end.getTime() - range.start.getTime());
+            const pad = span * 0.04;
+            this.viewStart = range.start.getTime() - pad;
+            this.viewEnd = range.end.getTime() + pad;
+            this.scrollTop = 0;
+            // Nothing is hovered or selected in a file, and a chip left
+            // highlighted from the pointer's last position would be an
+            // accident preserved in the export.
+            this.hovered = null;
+            this.selected = null;
+
+            const width = vertical ? EXPORT_VERTICAL_WIDTH : EXPORT_WIDTH;
+            // Height comes from a real layout at the export width, because chip
+            // widths decide the row count and the row count decides how tall
+            // the lanes are. Guessing it crops the bottom lane.
+            this.exportSurface = { width, height: 0 };
+            this.layoutRows();
+            const content = this.lanes.reduce((total, lane) => total + lane.height, this.axisHeight());
+            const height = Math.ceil(vertical
+                ? Math.max(EXPORT_MIN_HEIGHT, this.lanes.reduce((count, lane) => count + lane.items.length, 0) * 44 + 120)
+                : Math.max(EXPORT_MIN_HEIGHT, content + 16));
+
+            const surface = this.container.ownerDocument.createElement('canvas');
+            surface.width = Math.round(width * EXPORT_SCALE);
+            surface.height = Math.round(height * EXPORT_SCALE);
+            const ctx = surface.getContext('2d');
+            if (!ctx) return null;
+            ctx.setTransform(EXPORT_SCALE, 0, 0, EXPORT_SCALE, 0, 0);
+            this.exportSurface = { width, height };
+            this.canvas = surface;
+            this.ctx = ctx;
+            this.draw();
+            return surface;
+        } finally {
+            this.canvas = saved.canvas;
+            this.ctx = saved.ctx;
+            this.exportSurface = saved.surface;
+            this.viewStart = saved.start;
+            this.viewEnd = saved.end;
+            this.scrollTop = saved.scrollTop;
+            this.hovered = saved.hovered;
+            this.selected = saved.selected;
+            // The layout still holds rows measured at the export width, so the
+            // view has to be rebuilt rather than merely repainted.
+            this.layoutRows();
+            this.scheduleDraw();
+        }
     }
 
     async exportAsCsv(): Promise<void> { await this.writeExport('csv', this.toCsv()); }
@@ -677,7 +769,7 @@ export class NativeTimelineRenderer {
 
     private layoutRows(): void {
         const rowHeight = this.rowHeight();
-        const width = this.root?.clientWidth || 900;
+        const width = this.viewportWidth();
         const ctx = this.ctx;
         const axisHeight = this.axisHeight();
         const chronology = !this.options.ganttMode;
@@ -723,10 +815,10 @@ export class NativeTimelineRenderer {
             top += lane.height;
         });
         if (this.lanes.length === 1 && this.root) {
-            this.lanes[0].height = Math.max(this.lanes[0].height, this.root.clientHeight - axisHeight);
+            this.lanes[0].height = Math.max(this.lanes[0].height, this.viewportHeight() - axisHeight);
             top = axisHeight + this.lanes[0].height;
         }
-        const maxScroll = Math.max(0, top - (this.root?.clientHeight || 0));
+        const maxScroll = Math.max(0, top - this.viewportHeight());
         this.scrollTop = Math.min(this.scrollTop, maxScroll);
     }
 
@@ -799,8 +891,8 @@ export class NativeTimelineRenderer {
         if (!this.canvas || !this.ctx || !this.root) return;
         this.layoutRows();
         const ctx = this.ctx;
-        const width = this.root.clientWidth;
-        const height = this.root.clientHeight;
+        const width = this.viewportWidth();
+        const height = this.viewportHeight();
         ctx.clearRect(0, 0, width, height);
         ctx.fillStyle = this.css('--background-primary', '#111827');
         ctx.fillRect(0, 0, width, height);
@@ -846,7 +938,7 @@ export class NativeTimelineRenderer {
             ctx.strokeStyle = this.css('--background-modifier-border', '#374151');
             ticks.forEach(tick => {
                 const x = SIDEBAR_WIDTH + tick.x;
-                ctx.beginPath(); ctx.moveTo(x, axisHeight); ctx.lineTo(x, this.root?.clientHeight || 0); ctx.stroke();
+                ctx.beginPath(); ctx.moveTo(x, axisHeight); ctx.lineTo(x, this.viewportHeight()); ctx.stroke();
                 ctx.fillText(tick.label, x + 5, 25);
             });
             ctx.strokeRect(0, 0, width, axisHeight);
@@ -860,7 +952,7 @@ export class NativeTimelineRenderer {
         ctx.lineWidth = 1;
         for (let time = first; time < this.viewEnd; time += step) {
             const x = this.timeToX(time, width);
-            ctx.beginPath(); ctx.moveTo(x, axisHeight); ctx.lineTo(x, this.root?.clientHeight || 0); ctx.stroke();
+            ctx.beginPath(); ctx.moveTo(x, axisHeight); ctx.lineTo(x, this.viewportHeight()); ctx.stroke();
             ctx.fillText(this.formatTick(time, step), x + 5, 25);
         }
         ctx.strokeRect(0, 0, width, axisHeight);
@@ -2313,6 +2405,8 @@ export class NativeTimelineRenderer {
         const parsed = parseEventDate(value, { referenceDate: this.referenceDate, timezone: 'utc' });
         return toMillis(parsed.start) ?? NaN;
     }
+    private viewportWidth(): number { return this.exportSurface?.width ?? this.root?.clientWidth ?? 900; }
+    private viewportHeight(): number { return this.exportSurface?.height ?? this.root?.clientHeight ?? 600; }
     private eventKey(event: Event): string { return String(event.id || event.name); }
     private timeToX(time: number, width: number): number { return SIDEBAR_WIDTH + (time - this.viewStart) / (this.viewEnd - this.viewStart) * Math.max(1, width - SIDEBAR_WIDTH); }
     private rowHeight(): number { return Math.round(24 + (100 - this.options.density) * 0.16); }

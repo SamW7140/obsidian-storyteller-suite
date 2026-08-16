@@ -763,6 +763,22 @@ export class TimelineView extends ItemView {
 
         menu.addSeparator();
 
+        // Kept apart from the two above because they capture different things:
+        // those save the window, these save the story.
+        menu.addItem((item) => {
+            item.setTitle('Export whole timeline as PNG')
+                .setIcon('maximize')
+                .onClick(() => { void this.renderer?.exportAsImage('png', 'full'); });
+        });
+
+        menu.addItem((item) => {
+            item.setTitle('Export whole timeline as JPG')
+                .setIcon('maximize')
+                .onClick(() => { void this.renderer?.exportAsImage('jpg', 'full'); });
+        });
+
+        menu.addSeparator();
+
         menu.addItem((item) => {
             item.setTitle('Export as CSV')
                 .setIcon('table')
