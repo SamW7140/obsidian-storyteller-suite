@@ -2240,7 +2240,10 @@ export class NativeTimelineRenderer {
         }
 
         const overSidebar = !vertical && event.offsetX < SIDEBAR_WIDTH;
-        const canScrollLanes = this.maxLaneScroll() > 0;
+        // Lane scrolling means nothing in the vertical layout: the cards are
+        // placed along the time axis and never read scrollTop, so a bare
+        // trackpad scroll has to pan through time or the gesture looks dead.
+        const canScrollLanes = !vertical && this.maxLaneScroll() > 0;
         if (canScrollLanes && (event.altKey || overSidebar)) {
             this.scrollTop = Math.max(0, Math.min(this.maxLaneScroll(), this.scrollTop + deltaY));
             this.scheduleDraw();
