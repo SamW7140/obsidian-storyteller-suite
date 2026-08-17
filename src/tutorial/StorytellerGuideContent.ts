@@ -134,49 +134,47 @@ export function getWhatsNewGuide(version: string): StorytellerGuideDocument {
     return {
         title: `What is new in ${version}`,
         introHtml: `
-            <p>This update ships a video tutorial, a round of timeline repairs, and a tidier Help section.</p>
+            <p><strong>Storyteller Suite ${version}</strong> introduces embedded live timeline blocks inside any note, per-story era/track/branch management, character & world-building grouping, trackpad pinch zoom, and full canvas exports.</p>
         `,
         sections: [
             {
-                title: 'New',
+                title: 'Inline Timeline Blocks',
                 bodyHtml: `
                     <ul>
-                        <li><strong>Video tutorial.</strong> A video tutorial for Storyteller Suite is now available under <strong>Settings &rarr; Storyteller Suite &rarr; Help</strong>, right next to the getting started guide.</li>
-                        <li><strong>One Help section for everything.</strong> The tutorial, the guides, contact, and support links now all live together in the Help tab of the plugin settings.</li>
+                        <li><strong>Live note embedding.</strong> Embed an interactive timeline inside any note using a fenced <code>timeline</code> code block.</li>
+                        <li><strong>No separate panel needed.</strong> The timeline renders directly inside your note document so you can view chronology right alongside your writing.</li>
                     </ul>
                 `
             },
             {
-                title: 'Timeline fixes',
+                title: 'Eras, Tracks & Alternate Branches',
                 bodyHtml: `
                     <ul>
-                        <li><strong>The timeline fills the pane.</strong> The widget no longer hugs its content and leaves the rest of the view empty. It stretches to the full height of the panel.</li>
-                        <li><strong>Edit mode actually saves.</strong> Dragging an event to reschedule it now writes the new date to the note, even when edit mode was toggled on after the timeline opened. Before, the move could look successful and silently never persist.</li>
-                        <li><strong>Gantt dependency arrows stay attached.</strong> Arrows no longer float away from their bars when the panel is taller than its content.</li>
-                        <li><strong>Flashback and flash-forward connectors render.</strong> The dashed connector lines between an event and its frame event now draw correctly and follow the view as you zoom and pan.</li>
-                        <li><strong>Readable event cards.</strong> Event text uses your theme&rsquo;s text color and range bars use themed backgrounds, instead of the near-black-on-dark and pastel-blue defaults that came baked into the timeline library.</li>
+                        <li><strong>Scoped Story Management.</strong> Eras, tracks, and alternate timeline branches now live cleanly within their parent story instead of bleeding across projects.</li>
+                        <li><strong>Branch History Inheritance.</strong> Alternate timelines inherit events from the main storyline up to their divergence point.</li>
+                        <li><strong>Visual Divergence & Causality.</strong> Causes and effects are recorded directly on events, and branching commands jump directly to the newly created branch.</li>
                     </ul>
                 `
             },
             {
-                title: 'Also fixed',
+                title: 'Grouping, Zoom & Export',
                 bodyHtml: `
                     <ul>
-                        <li>The settings pane has a second safety net against opening blank in Obsidian 1.13+&rsquo;s separate settings window. It now re-renders itself as soon as the window move completes.</li>
-                        <li>The plot hole detector no longer flags characters linked by their id (such as <code>char-mira-vey</code>) as missing when the character file exists.</li>
+                        <li><strong>Grouped Entity Lanes.</strong> Group timeline events by items, cultures, or magic systems, or track character locations across time.</li>
+                        <li><strong>Trackpad Pinch Zoom.</strong> Smooth two-finger pinch-to-zoom on laptop trackpads alongside mouse wheel controls.</li>
+                        <li><strong>Full Canvas Export.</strong> Exporting the timeline now captures your entire plot timeline, not just what's currently in view.</li>
+                        <li><strong>Smart Gantt Bars.</strong> Short Gantt events automatically render as readable chips so text doesn't overflow or clip.</li>
                     </ul>
                 `
             },
             {
-                title: 'Try the beta',
+                title: 'Fixes & Stability',
                 bodyHtml: `
-                    <p>A brand new timeline and a dating system are available in beta. You can try them today with BRAT (Beta Reviewers Auto-update Tool):</p>
-                    <ol>
-                        <li>Install and enable the <strong>BRAT</strong> plugin from the community plugin browser.</li>
-                        <li>In BRAT, choose <strong>Add beta plugin</strong> and enter <code>Maws7140/obsidian-storyteller-suite</code>.</li>
-                        <li>Pick the latest beta release when prompted.</li>
-                    </ol>
-                    <p>Beta builds are still changing, so back up your vault before switching. You can return to the stable release at any time by removing the beta plugin in BRAT and reinstalling from the community plugin browser.</p>
+                    <ul>
+                        <li><strong>Story Switching.</strong> Changing stories reloads open timeline views and resets tracks, branches, and filters to avoid blank views.</li>
+                        <li><strong>Cleaner Date Formats.</strong> Epoch suffixes like <code>CE</code> now only appear for custom user calendars; Gregorian dates render cleanly as <code>BCE</code> where applicable.</li>
+                        <li><strong>Scroll & Arrow Fixes.</strong> Dependency arrows stay anchored while scrolling, and event markers land on exact calendar days.</li>
+                    </ul>
                 `
             }
         ]
