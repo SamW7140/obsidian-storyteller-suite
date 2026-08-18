@@ -561,10 +561,13 @@ export class StorytellerSuiteSettingTab extends PluginSettingTab {
             { id: 'locations',    name: t('locations') },
             { id: 'events',       name: t('timeline') },
             { id: 'items',        name: t('items') },
+            { id: 'maps',         name: t('maps') },
             { id: 'network',      name: t('networkGraph') },
             { id: 'gallery',      name: t('gallery') },
             { id: 'groups',       name: t('groups') },
             { id: 'references',   name: t('references') },
+            { id: 'writing',      name: t('writing') },
+            { id: 'compile',      name: t('compile') },
             { id: 'chapters',     name: t('chapters') },
             { id: 'scenes',       name: t('scenes') },
             { id: 'cultures',     name: t('cultures') },
@@ -573,7 +576,8 @@ export class StorytellerSuiteSettingTab extends PluginSettingTab {
             { id: 'compendium',   name: 'Compendium' },
             { id: 'books',        name: 'Books' },
             { id: 'campaign',     name: 'Campaign' },
-            { id: 'templates',    name: t('templates') }
+            { id: 'templates',    name: t('templates') },
+            { id: 'analytics',    name: t('analytics') }
         ];
 
         availableTabs.forEach(tab => {

@@ -134,36 +134,27 @@ export function getWhatsNewGuide(version: string): StorytellerGuideDocument {
     return {
         title: `What is new in ${version}`,
         introHtml: `
-            <p><strong>Storyteller Suite ${version}</strong> introduces embedded live timeline blocks inside any note, per-story era/track/branch management, character & world-building grouping, trackpad pinch zoom, and full canvas exports.</p>
+            <p><strong>Storyteller Suite ${version}</strong> closes gaps and brings the timeline closer to my final vision.</p>
         `,
         sections: [
             {
-                title: 'Inline Timeline Blocks',
+                title: 'Native Timeline Engine & Custom Calendars',
                 bodyHtml: `
                     <ul>
-                        <li><strong>Live note embedding.</strong> Embed an interactive timeline inside any note using a fenced <code>timeline</code> code block.</li>
-                        <li><strong>No separate panel needed.</strong> The timeline renders directly inside your note document so you can view chronology right alongside your writing.</li>
+                        <li><strong>Native Canvas Engine.</strong> The timeline rendering engine has been rewritten onto a custom canvas renderer.</li>
+                        <li><strong>Custom Dating Systems.</strong> Create custom calendars with user-defined month lengths, years, and epoch rules via settings.</li>
+                        <li><strong>Inline Note Embedding.</strong> Embed interactive timeline blocks inside any note using a fenced <code>timeline</code> code block.</li>
+                        <li><strong>Trackpad Pinch Zoom & Canvas Export.</strong> Pinch to zoom on laptop trackpads and export the entire timeline canvas.</li>
+                        <li><strong>Smart Gantt Bars.</strong> Short Gantt events automatically render as readable chips with shading for duration.</li>
                     </ul>
                 `
             },
             {
-                title: 'Eras, Tracks & Alternate Branches',
+                title: 'Eras & Alternate Timelines',
                 bodyHtml: `
                     <ul>
-                        <li><strong>Scoped Story Management.</strong> Eras, tracks, and alternate timeline branches now live cleanly within their parent story instead of bleeding across projects.</li>
-                        <li><strong>Branch History Inheritance.</strong> Alternate timelines inherit events from the main storyline up to their divergence point.</li>
-                        <li><strong>Visual Divergence & Causality.</strong> Causes and effects are recorded directly on events, and branching commands jump directly to the newly created branch.</li>
-                    </ul>
-                `
-            },
-            {
-                title: 'Grouping, Zoom & Export',
-                bodyHtml: `
-                    <ul>
-                        <li><strong>Grouped Entity Lanes.</strong> Group timeline events by items, cultures, or magic systems, or track character locations across time.</li>
-                        <li><strong>Trackpad Pinch Zoom.</strong> Smooth two-finger pinch-to-zoom on laptop trackpads alongside mouse wheel controls.</li>
-                        <li><strong>Full Canvas Export.</strong> Exporting the timeline now captures your entire plot timeline, not just what's currently in view.</li>
-                        <li><strong>Smart Gantt Bars.</strong> Short Gantt events automatically render as readable chips so text doesn't overflow or clip.</li>
+                        <li><strong>Scoped Eras & Tracks.</strong> Eras and tracks are scoped to their parent story notes.</li>
+                        <li><strong>Branch History Inheritance.</strong> Alternate timeline branches inherit historical events up to their divergence point.</li>
                     </ul>
                 `
             },
@@ -171,10 +162,21 @@ export function getWhatsNewGuide(version: string): StorytellerGuideDocument {
                 title: 'Fixes & Stability',
                 bodyHtml: `
                     <ul>
-                        <li><strong>Story Switching.</strong> Changing stories reloads open timeline views and resets tracks, branches, and filters to avoid blank views.</li>
-                        <li><strong>Cleaner Date Formats.</strong> Epoch suffixes like <code>CE</code> now only appear for custom user calendars; Gregorian dates render cleanly as <code>BCE</code> where applicable.</li>
-                        <li><strong>Scroll & Arrow Fixes.</strong> Dependency arrows stay anchored while scrolling, and event markers land on exact calendar days.</li>
+                        <li><strong>Story Switching.</strong> Changing active stories reloads open timeline views and resets tracks, branches, and filters.</li>
+                        <li><strong>Scroll & Arrow Fixes.</strong> Dependency arrows stay anchored while scrolling, and event markers align to calendar days.</li>
+                        <li><strong>Per-Project Custom Folders.</strong> Custom folder templates with <code>{storyName}</code>, <code>{storySlug}</code>, or <code>{storyId}</code> resolve per active story to prevent path collisions.</li>
+                        <li><strong>Modal Customization.</strong> Modal fields can be toggled on or off per entity type in settings, with default custom frontmatter fields.</li>
+                        <li><strong>Compile Step Scrolling.</strong> The compile tab layout scrolls to display all workflow steps.</li>
+                        <li><strong>Item Owners and Quantities.</strong> Plot items support multiple current owners and quantity tracking.</li>
+                        <li><strong>Template Variable Creation.</strong> Variable creation in templates is easier, with support for note-based templates and default template assignments.</li>
                     </ul>
+                `
+            },
+            {
+                title: 'Development Status & Next Steps',
+                bodyHtml: `
+                    <p>Apologies for the delay between updates due to recent life changes and work starting on a new plugin project.</p>
+                    <p>The next release will likely be the final beta update. It will include full project exporting, allowing you to export your entire story and vault data beyond timeline images.</p>
                 `
             }
         ]

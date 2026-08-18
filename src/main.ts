@@ -9828,6 +9828,17 @@ export default class StorytellerSuitePlugin extends Plugin {
         new StorytellerGuideModal(this.app, this, 'whats-new').open();
     }
 
+    openSettingsHelpTab(): void {
+        const setting = (this.app as any).setting;
+        if (!setting) return;
+        setting.open();
+        const tab = setting.openTabById ? setting.openTabById(this.manifest.id) : null;
+        if (tab && 'activeTab' in tab) {
+            tab.activeTab = 'help';
+            tab.display();
+        }
+    }
+
     private scheduleDeferredStartupMaintenance(delayMs = 1200): void {
         if (this.deferredStartupMaintenanceTimer !== null) {
             window.clearTimeout(this.deferredStartupMaintenanceTimer);

@@ -245,12 +245,12 @@ export class DashboardView extends ItemView {
             { id: 'locations', label: t('locations'), renderFn: (c: HTMLElement) => this.renderLocationsContent(c) },
             { id: 'events', label: t('timeline'), renderFn: (c: HTMLElement) => this.renderEventsContent(c) },
             { id: 'items', label: t('items'), renderFn: (c: HTMLElement) => this.renderItemsContent(c) },
-            { id: 'maps', label: 'Maps', renderFn: (c: HTMLElement) => this.renderMapsContent(c) },
+            { id: 'maps', label: t('maps'), renderFn: (c: HTMLElement) => this.renderMapsContent(c) },
             { id: 'network', label: t('networkGraph'), renderFn: (c: HTMLElement) => this.renderNetworkContent(c) },
             { id: 'gallery', label: t('gallery'), renderFn: (c: HTMLElement) => this.renderGalleryContent(c) },
             { id: 'groups', label: t('groups'), renderFn: (c: HTMLElement) => this.renderGroupsContent(c) },
             { id: 'references', label: t('references'), renderFn: (c: HTMLElement) => this.renderReferencesContent(c) },
-            { id: 'writing', label: 'Writing', renderFn: (c: HTMLElement) => this.renderWritingContent(c) },
+            { id: 'writing', label: t('writing'), renderFn: (c: HTMLElement) => this.renderWritingContent(c) },
             { id: 'compile', label: t('compile'), renderFn: (c: HTMLElement) => this.renderCompileContent(c) },
             { id: 'cultures', label: t('cultures'), renderFn: (c: HTMLElement) => this.renderCulturesContent(c) },
             { id: 'economies', label: t('economies'), renderFn: (c: HTMLElement) => this.renderEconomiesContent(c) },
@@ -259,7 +259,7 @@ export class DashboardView extends ItemView {
             { id: 'books', label: 'Books', renderFn: (c: HTMLElement) => this.renderBooksContent(c) },
             { id: 'campaign', label: 'Campaign', renderFn: (c: HTMLElement) => this.renderCampaignContent(c) },
             { id: 'templates', label: t('templates'), renderFn: (c: HTMLElement) => this.renderTemplatesContent(c) },
-            { id: 'analytics', label: 'Analytics', renderFn: (c: HTMLElement) => this.renderAnalyticsContent(c) },
+            { id: 'analytics', label: t('analytics'), renderFn: (c: HTMLElement) => this.renderAnalyticsContent(c) },
         ];
 
         this.applyTabOrder();
